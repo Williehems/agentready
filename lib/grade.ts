@@ -29,6 +29,13 @@ export interface Transcript {
   stepCount: number;
   /** True when a launch fell back off stealth, which weakens bot-wall claims. */
   stealth: boolean;
+  /**
+   * Set when the run ended for a reason of ours, not the site's: our model quota,
+   * our timeout, our budget. It never adds a blocker and never caps the score,
+   * because the site did not do it. It does say so in the summary, since a grade
+   * from a truncated run is a floor and reading it as a ceiling is unfair.
+   */
+  abandoned?: string;
 }
 
 const BOT_WALL_SIGNS = [
@@ -80,6 +87,24 @@ function allLinksAreDeadEnds(t: Transcript): boolean {
   const links = t.perceptions.flatMap((p) => p.elements.filter((e) => e.role === "link" && e.href));
   if (links.length < 3) return false;
   return links.every((l) => isDeadEndHref(l.href));
+}
+
+/**
+ * What the agent was looking at, reduced to something comparable.
+ *
+ * The URL alone is not it. A booking flow inside one modal advances through four
+ * screens without the address ever changing, and judging that by URL calls a
+ * working flow a stuck loop: seen live on a real spa site, where the element
+ * count went 37 to 51 while the URL stood still. So a loop is the page not
+ * changing, and this is what "not changing" means.
+ */
+function fingerprint(p: Perception): string {
+  return [
+    p.url,
+    p.title,
+    p.elements.length,
+    p.elements.map((e) => `${e.role}:${e.name}`).join("|"),
+  ].join("~");
 }
 
 export function grade(t: Transcript): Verdict {
@@ -150,9 +175,10 @@ export function grade(t: Transcript): Verdict {
     });
   }
 
-  // Same URL for four consecutive perceptions with no success is a stuck loop.
+  // Four consecutive perceptions of an unchanged page, with no success, is a
+  // stuck loop. Unchanged means the whole page state, not just the address.
   if (!t.declaredDone && t.perceptions.length >= 4) {
-    const tail = t.perceptions.slice(-4).map((p) => p.url);
+    const tail = t.perceptions.slice(-4).map(fingerprint);
     if (new Set(tail).size === 1) {
       blockers.push({
         blocker: "loop",
@@ -221,10 +247,15 @@ function summarise(
   actionLabel: string,
 ): string {
   const task = actionLabel.toLowerCase();
+  // Said first, because it changes how every number after it should be read.
+  const cutShort = t.abandoned
+    ? ` The run stopped early for a reason outside the site (${t.abandoned}), so this is a floor, not a ceiling.`
+    : "";
+
   if (milestones.includes("completed-action")) {
     return `An AI agent completed "${task}" in ${t.stepCount} steps.${
       blockers.length ? ` It worked, but it had to get past ${blockers.length} obstacle(s) on the way.` : ""
-    }`;
+    }${cutShort}`;
   }
   const primary = blockers[0];
   if (primary) {
@@ -233,7 +264,7 @@ function summarise(
       : milestones.includes("understood-offering")
         ? "It understood what you sell but never reached the action"
         : "It could not even read what you sell";
-    return `An AI agent failed to ${task}. ${where}. Primary blocker: ${primary.blocker}.`;
+    return `An AI agent failed to ${task}. ${where}. Primary blocker: ${primary.blocker}.${cutShort}`;
   }
-  return `An AI agent failed to ${task} within ${t.stepCount} steps, without hitting a specific blocker. Grade ${letter}.`;
+  return `An AI agent failed to ${task} within ${t.stepCount} steps, without hitting a specific blocker. Grade ${letter}.${cutShort}`;
 }

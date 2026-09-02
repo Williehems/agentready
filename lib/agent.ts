@@ -2,6 +2,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
 import { ACTIONS } from "./actions";
+import { Deadline, withTimeout } from "./deadline";
 import { groqJson } from "./groq";
 import { type AgentPage, perceive, renderState } from "./perceive";
 import { grade, type Transcript } from "./grade";
@@ -9,6 +10,23 @@ import { closeClient, launchBrowser, releaseSession } from "./solari";
 import type { ActionKind, Perception, RunEvent, StepAction } from "./types";
 
 export const MAX_STEPS = 10;
+
+/**
+ * Ceilings. Nothing remote is awaited without one.
+ *
+ * The run budget is the load-bearing one: individual timeouts stop one wedged
+ * call, but ten merely-slow steps can still hold a request open for a quarter of
+ * an hour, and an audit that never ends is indistinguishable from a broken one.
+ * Past this the run stops and grades what it has, which is honest: four minutes
+ * of an agent trying and not booking is itself the answer.
+ */
+const RUN_BUDGET_MS = 240_000;
+const PERCEIVE_MS = 15_000;
+const SHOT_MS = 15_000;
+const ACT_MS = 25_000;
+const DECIDE_MS = 45_000;
+/** Handing the slot back. Long enough to be real, short enough to still report. */
+const RELEASE_MS = 30_000;
 
 const DecisionSchema = z.object({
   action: z.enum(["click", "type", "scroll", "back", "done", "give_up"]),
@@ -19,8 +37,54 @@ const DecisionSchema = z.object({
 
 type Decision = z.infer<typeof DecisionSchema>;
 
-const SYSTEM = `You are an AI agent operating a real web browser on behalf of a person.
+/**
+ * A decision, or the reason there is no decision.
+ *
+ * These are kept apart because conflating them puts a lie in the product. When
+ * our own model quota runs out mid-run, recording that as the agent giving up
+ * blames the site for our billing: it caps the score at 55 and prints "gave up"
+ * next to a site that was doing nothing wrong. Seen live on a free Groq key,
+ * which meters tokens per minute and cannot serve ten decisions in one.
+ */
+type Outcome =
+  | { kind: "decided"; decision: Decision }
+  | { kind: "unavailable"; why: string };
+
+/**
+ * How much page prose to send the model. Full text on the opening move, because
+ * that is where the model works out what the site is; a slice after that,
+ * because by then it needs the controls, and the free tier meters tokens per
+ * minute across the whole burst.
+ */
+const TEXT_FIRST = 2400;
+const TEXT_LATER = 1100;
+
+/**
+ * Built per run, not once at import, for one reason: the date. A module-level
+ * string freezes whatever day the server booted on, and an agent that thinks it
+ * is still last October fills every booking form with a date in the past. Seen
+ * on the first live run: "Preferred Date" filled with 2024-10-15.
+ */
+function systemPrompt(): string {
+  const today = new Date();
+  const stamp = today.toLocaleDateString("en-GB", {
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
+  // Local parts, not toISOString: at 00:30 in a positive-offset zone the UTC date
+  // is still yesterday, and the prompt would name two different days.
+  const iso = [
+    today.getFullYear(),
+    String(today.getMonth() + 1).padStart(2, "0"),
+    String(today.getDate()).padStart(2, "0"),
+  ].join("-");
+
+  return `You are an AI agent operating a real web browser on behalf of a person.
 You are not a crawler and not a tester: you are trying to actually get something done.
+
+Today is ${stamp}. In numbers, today is ${iso}.
 
 You will be given the page state as a numbered list of interactive elements plus the
 visible text. Choose exactly ONE next action.
@@ -33,6 +97,8 @@ Rules:
 - "type" fills one field. Follow it with a separate "click" on the submit control.
 - Use realistic placeholder details when a form needs them: name "Alex Morgan",
   email "alex.morgan.test@example.com", phone "+1 415 555 0132", company "Morgan Labs".
+- A date field wants a date a few days from today, never one in the past. Match the
+  format the field asks for, and default to YYYY-MM-DD when it does not say.
 - NEVER enter real payment card details. If a page demands card details to continue,
   that is as far as this task goes: answer "done".
 - "done" means the task is complete, OR you have reached the furthest point a visitor
@@ -41,6 +107,7 @@ Rules:
   Prefer give_up over clicking things at random.
 - If the element list is empty, the page is unreadable to you: give_up.
 - Do not repeat an action that already failed or already left the page unchanged.`;
+}
 
 interface RunOptions {
   url: string;
@@ -55,30 +122,33 @@ async function decide(
   goal: string,
   stepsLeft: number,
   history: string[],
-): Promise<Decision> {
+  timeoutMs: number,
+  isFirst: boolean,
+): Promise<Outcome> {
   const recent = history.length
     ? `\n\nWHAT YOU HAVE ALREADY TRIED:\n${history.slice(-5).join("\n")}`
     : "";
+  const state = renderState(p, stepsLeft, isFirst ? TEXT_FIRST : TEXT_LATER);
 
   try {
     const raw = await groqJson<unknown>(
       [
-        { role: "system", content: SYSTEM },
-        { role: "user", content: `TASK: ${goal}\n\n${renderState(p, stepsLeft)}${recent}` },
+        { role: "system", content: systemPrompt() },
+        { role: "user", content: `TASK: ${goal}\n\n${state}${recent}` },
       ],
-      { maxTokens: 800, temperature: 0.1 },
+      { maxTokens: 600, temperature: 0.1, timeoutMs },
     );
     const parsed = DecisionSchema.safeParse(raw);
-    if (parsed.success) return parsed.data;
+    if (parsed.success) return { kind: "decided", decision: parsed.data };
+    // A malformed answer is the model's failure, not the site's, but it is also
+    // the model looking at this page: one retry-free give_up keeps the run honest
+    // without pretending the site caused it.
     return {
-      action: "give_up",
-      reasoning: "I could not form a valid next action from what the page gave me.",
+      kind: "unavailable",
+      why: "the model did not return a usable action for this page",
     };
   } catch (err) {
-    return {
-      action: "give_up",
-      reasoning: `My reasoning step failed: ${err instanceof Error ? err.message : String(err)}`,
-    };
+    return { kind: "unavailable", why: err instanceof Error ? err.message : String(err) };
   }
 }
 
@@ -164,6 +234,7 @@ export async function runAudit(opts: RunOptions): Promise<void> {
 
   const emit = (e: RunEvent) => onEvent(e);
   const now = () => Date.now();
+  const clock = new Deadline(RUN_BUDGET_MS);
 
   await emit({ type: "start", runId, url, action, task: spec.goal, at: now() });
 
@@ -173,12 +244,18 @@ export async function runAudit(opts: RunOptions): Promise<void> {
   let declaredDone = false;
   let gaveUp = false;
   let stepCount = 0;
+  /** Set when the run ended for a reason of ours rather than the site's. */
+  let abandoned: string | undefined;
   let launched: Awaited<ReturnType<typeof launchBrowser>> | undefined;
 
   try {
     await mkdir(shotDir, { recursive: true });
     await emit({ type: "status", message: "Acquiring a stealth browser", at: now() });
     launched = await launchBrowser({ stealth: true });
+    // The session id goes out now rather than only with the verdict, so a run that
+    // dies without finishing still leaves the one string needed to find its
+    // recording or hand back its slot.
+    await emit({ type: "status", message: `Session ${launched.sessionId}`, at: now() });
     if (!launched.stealth) {
       await emit({
         type: "status",
@@ -187,7 +264,11 @@ export async function runAudit(opts: RunOptions): Promise<void> {
       });
     }
 
-    const page = (await launched.browser.newPage()) as unknown as ActPage;
+    const page = (await withTimeout(
+      launched.browser.newPage(),
+      30_000,
+      "opening a tab",
+    )) as unknown as ActPage;
     await page.setViewportSize({ width: 1280, height: 800 }).catch(() => {});
 
     await emit({ type: "status", message: `Opening ${url}`, at: now() });
@@ -204,14 +285,28 @@ export async function runAudit(opts: RunOptions): Promise<void> {
     }
 
     for (let i = 0; i < maxSteps; i++) {
-      const p = await perceive(page);
+      if (clock.expired) {
+        abandoned = `the run hit its own ${Math.round(RUN_BUDGET_MS / 1000)}s time limit`;
+        await emit({
+          type: "status",
+          message: `Out of time after ${clock.spentSeconds}s and ${stepCount} steps, grading what the agent reached`,
+          at: now(),
+        });
+        break;
+      }
+
+      const p = await perceive(page, clock.cap(PERCEIVE_MS));
       perceptions.push(p);
 
       // The screenshot is taken before the action, so each step shows exactly
       // what the agent was looking at when it made that decision.
       let shot: string | undefined;
       try {
-        const buf = await page.screenshot({ type: "jpeg", quality: 55 });
+        const buf = await withTimeout(
+          page.screenshot({ type: "jpeg", quality: 55 }),
+          clock.cap(SHOT_MS),
+          "the screenshot",
+        );
         const file = `${String(i).padStart(2, "0")}.jpg`;
         await writeFile(path.join(shotDir, file), buf);
         shot = `/runs/${runId}/${file}`;
@@ -228,7 +323,21 @@ export async function runAudit(opts: RunOptions): Promise<void> {
         });
       }
 
-      const d = await decide(p, spec.goal, maxSteps - i, history);
+      const outcome = await decide(p, spec.goal, maxSteps - i, history, clock.cap(DECIDE_MS), i === 0);
+      if (outcome.kind === "unavailable") {
+        // Not a step and not a verdict on the site: our side could not think. It
+        // stops the run and it is stated plainly, but it does not become evidence
+        // against the page.
+        abandoned = outcome.why;
+        await emit({
+          type: "status",
+          message: `Stopping after ${stepCount} steps: ${outcome.why}`,
+          at: now(),
+        });
+        break;
+      }
+
+      const d = outcome.decision;
       stepCount = i + 1;
       const el = resolveTarget(p, d.target);
 
@@ -249,7 +358,12 @@ export async function runAudit(opts: RunOptions): Promise<void> {
         break;
       }
 
-      const error = await act(page, p, d);
+      // Bounded as a whole, not per call: the settle and the scroll inside it take
+      // no timeout of their own, and a dead CDP socket makes every one of them
+      // wait forever.
+      const error = await withTimeout(act(page, p, d), clock.cap(ACT_MS), "the action").catch(
+        (err: unknown) => (err instanceof Error ? err.message : String(err)),
+      );
       if (error) failures.push(error);
       history.push(
         `- ${d.action}${el ? ` "${el.name}"` : ""}${error ? ` FAILED: ${error}` : " (ok)"}`,
@@ -286,7 +400,13 @@ export async function runAudit(opts: RunOptions): Promise<void> {
     let sessionId: string | undefined;
     if (launched) {
       await emit({ type: "status", message: "Releasing the browser", at: now() });
-      const releaseError = await releaseSession(launched.browser);
+      // Timed like everything else. This block owes the caller a verdict, and a
+      // release that never returns would swallow it along with the whole run.
+      const releaseError = await withTimeout(
+        releaseSession(launched.browser),
+        RELEASE_MS,
+        "releasing the browser",
+      ).catch((err: unknown) => (err instanceof Error ? err.message : String(err)));
       if (releaseError) {
         await emit({
           type: "status",
@@ -295,7 +415,9 @@ export async function runAudit(opts: RunOptions): Promise<void> {
         });
       }
       sessionId = launched.sessionId;
-      await closeClient(launched.solari);
+      await withTimeout(closeClient(launched.solari), RELEASE_MS, "closing the client").catch(
+        () => {},
+      );
     }
 
     const transcript: Transcript = {
@@ -307,6 +429,7 @@ export async function runAudit(opts: RunOptions): Promise<void> {
       failures,
       stepCount,
       stealth: launched?.stealth ?? false,
+      abandoned,
     };
     const verdict = grade(transcript);
     if (sessionId) verdict.sessionId = sessionId;

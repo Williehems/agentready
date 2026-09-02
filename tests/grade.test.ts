@@ -222,6 +222,18 @@ describe("grade: the soft findings", () => {
     assert.ok(!blockers(transcript({ perceptions: moving, stepCount: 4 })).includes("loop"));
   });
 
+  it("does not call a modal flow a loop just because the URL never changes", () => {
+    // A booking flow inside one modal: four screens, one address. Calling this a
+    // loop is how a working site gets graded as a broken one.
+    const flow = [
+      page({ elements: [el(1, "button", "Book Now")] }),
+      page({ elements: [el(1, "button", "01 Body Massage"), el(2, "button", "02 Facial")] }),
+      page({ elements: [el(1, "button", "Continue")] }),
+      page({ elements: [el(1, "textbox", "Preferred Date"), el(2, "button", "Confirm")] }),
+    ];
+    assert.ok(!blockers(transcript({ perceptions: flow, stepCount: 4 })).includes("loop"));
+  });
+
   it("flags nav-error when nothing was ever perceived", () => {
     const v = grade(transcript({ perceptions: [], stepCount: 0 }));
     assert.ok(v.blockers.some((b) => b.blocker === "nav-error"));
@@ -293,5 +305,52 @@ describe("grade: milestones and letters", () => {
   it("explains how far the agent got when it never reached the action", () => {
     const v = grade(transcript({ perceptions: [page({ jsGated: true, text: "" })] }));
     assert.match(v.summary, /could not even read what you sell/);
+  });
+});
+
+describe("grade: a run cut short by our own side", () => {
+  /** A page that has earned understood(15) + key info(20) + cta(25) = 60. */
+  const reached = () =>
+    page({ hasPrice: true, elements: [el(1, "link", "Buy now", "/checkout")] });
+
+  it("does not cap the score the way giving up does", () => {
+    const t = transcript({
+      action: "purchase",
+      perceptions: [reached()],
+      stepCount: 5,
+      abandoned: "Groq rate limit reached",
+    });
+    const v = grade(t);
+    // 60, not the 55 that gaveUp would have forced. Our quota is not the site's
+    // failing, and docking a site for it is a wrong answer with a number on it.
+    assert.equal(v.score, 60);
+    assert.equal(v.grade, "C");
+  });
+
+  it("says in the summary that the grade is a floor, and why", () => {
+    const v = grade(
+      transcript({
+        action: "purchase",
+        perceptions: [reached()],
+        stepCount: 5,
+        abandoned: "Groq rate limit reached",
+      }),
+    );
+    assert.match(v.summary, /stopped early for a reason outside the site/);
+    assert.match(v.summary, /Groq rate limit reached/);
+    assert.match(v.summary, /floor, not a ceiling/);
+  });
+
+  it("adds no blocker of its own", () => {
+    const clean = blockers(transcript({ action: "purchase", perceptions: [reached()] }));
+    const cut = blockers(
+      transcript({ action: "purchase", perceptions: [reached()], abandoned: "our timeout" }),
+    );
+    assert.deepEqual(cut, clean);
+  });
+
+  it("stays quiet about it on a run that finished normally", () => {
+    const v = grade(transcript({ action: "purchase", perceptions: [reached()] }));
+    assert.ok(!v.summary.includes("outside the site"));
   });
 });

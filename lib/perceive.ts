@@ -1,3 +1,4 @@
+import { withTimeout } from "./deadline";
 import type { Perception, PerceivedElement } from "./types";
 
 /**
@@ -64,6 +65,8 @@ const MAX_TEXT = 2800;
 const MAX_SNAPSHOT = 500_000;
 /** How far back to look for a label when a control has no accessible name. */
 const LABEL_LOOKBACK = 4;
+/** Reading one page. Generous, because a heavy page under a cold cache is slow. */
+const PERCEIVE_MS = 15_000;
 
 /** Currency as selectable text. Deliberately conservative to avoid false positives. */
 const PRICE_RE =
@@ -165,20 +168,29 @@ export function parseAriaSnapshot(snapshot: string): PerceivedElement[] {
  * Never reach for a page method without a try around the call itself. An SDK
  * that has dropped the method throws synchronously, before any `.catch()` on
  * the returned promise can attach, and takes the whole run with it.
+ *
+ * The timeout is the other half of that. `ariaSnapshot` and `evaluate` take no
+ * timeout option of their own, and a page whose main thread is wedged never
+ * answers either of them, so without a clock here one stuck site stops the run
+ * dead. A partial perception is a real finding; silence is not.
  */
-async function attempt<T>(fn: () => Promise<T>, fallback: T): Promise<T> {
+async function attempt<T>(fn: () => Promise<T>, fallback: T, timeoutMs: number): Promise<T> {
   try {
-    return await fn();
+    return await withTimeout(fn(), timeoutMs, "the page");
   } catch {
     return fallback;
   }
 }
 
-export async function perceive(page: AgentPage): Promise<Perception> {
+export async function perceive(page: AgentPage, timeoutMs = PERCEIVE_MS): Promise<Perception> {
   const [snapshot, rawText, title] = await Promise.all([
-    attempt(() => page.ariaSnapshot({ mode: "ai" }), ""),
-    attempt(() => page.evaluate<string>(() => (document.body ? document.body.innerText : "")), ""),
-    attempt(() => page.title(), ""),
+    attempt(() => page.ariaSnapshot({ mode: "ai" }), "", timeoutMs),
+    attempt(
+      () => page.evaluate<string>(() => (document.body ? document.body.innerText : "")),
+      "",
+      timeoutMs,
+    ),
+    attempt(() => page.title(), "", timeoutMs),
   ]);
 
   const elements = parseAriaSnapshot(snapshot);
@@ -197,12 +209,14 @@ export async function perceive(page: AgentPage): Promise<Perception> {
 }
 
 /** Render the perception as the compact numbered state the model sees. */
-export function renderState(p: Perception, stepsLeft: number): string {
+export function renderState(p: Perception, stepsLeft: number, textBudget = MAX_TEXT): string {
   const els = p.elements.length
     ? p.elements
         .map((e) => `${e.index}. [${e.role}] ${e.name}${e.href ? `  -> ${e.href}` : ""}`)
         .join("\n")
     : "(none: the accessibility tree is empty)";
+
+  const prose = p.text.slice(0, Math.max(0, textBudget));
 
   return [
     `URL: ${p.url}`,
@@ -213,6 +227,6 @@ export function renderState(p: Perception, stepsLeft: number): string {
     els,
     "",
     "VISIBLE TEXT:",
-    p.text || "(none)",
+    prose || "(none)",
   ].join("\n");
 }
