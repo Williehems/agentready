@@ -45,6 +45,12 @@ export interface Verdict {
   steps: number;
   replayUrl?: string;
   /**
+   * True when the run never reached the site, so there is nothing to grade. The
+   * letter and the score are meaningless here and must not be shown: an F handed
+   * to a site because our browser provider answered 503 is a libel, not a finding.
+   */
+  inconclusive?: true;
+  /**
    * The Solari session behind this run. The recording is uploaded minutes after
    * the session is released, so the replay is fetched on demand from this id
    * rather than holding the run open waiting for it.

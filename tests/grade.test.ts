@@ -365,3 +365,28 @@ describe("grade: a run cut short by our own side", () => {
     assert.ok(!v.summary.includes("outside the site"));
   });
 });
+
+describe("grade: a run that never reached the site", () => {
+  it("returns no verdict rather than an F when our side never got a browser", () => {
+    // Seen live: Solari answered 503 twice, the run died before the first
+    // perception, and the site was handed F/0 with "the page never loaded".
+    const v = grade(
+      transcript({
+        perceptions: [],
+        stepCount: 0,
+        abandoned: "Solari answered 503 to every attempt",
+      }),
+    );
+    assert.equal(v.inconclusive, true);
+    assert.deepEqual(v.blockers, [], "nothing observed, so nothing to charge");
+    assert.match(v.summary, /^No verdict/);
+    assert.match(v.summary, /503/);
+  });
+
+  it("still blames the site when the site itself never answered", () => {
+    const v = grade(transcript({ perceptions: [], stepCount: 0 }));
+    assert.equal(v.inconclusive, undefined);
+    assert.ok(v.blockers.some((b) => b.blocker === "nav-error"));
+    assert.equal(v.grade, "F");
+  });
+});

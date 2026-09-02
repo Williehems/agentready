@@ -1,14 +1,16 @@
 "use client";
 
 import { useState } from "react";
-import type { RunEvent } from "@/lib/types";
+import type { RunEvent, StepAction } from "@/lib/types";
 
 type StepEvent = Extract<RunEvent, { type: "step" }>;
 type StatusEvent = Extract<RunEvent, { type: "status" }>;
 
-const VERB: Record<string, string> = {
+/** Typed by StepAction so adding an action the timeline cannot say is a build error. */
+const VERB: Record<StepAction, string> = {
   click: "clicked",
   type: "typed into",
+  select: "chose",
   scroll: "scrolled",
   back: "went back",
   done: "declared done",

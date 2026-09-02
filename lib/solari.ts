@@ -29,6 +29,29 @@ export class SolariUnavailableError extends Error {
   }
 }
 
+/**
+ * The status the SDK dropped on the floor.
+ *
+ * Its HTTP layer retries 502/503/504 and network faults, then throws
+ * `Solari POST /sessions: exhausted 2 attempts` with no status of its own and the
+ * last real failure hidden in `cause`. Read as-is, an outage on their side is
+ * indistinguishable from a bad key or a spent plan, and the one thing the reader
+ * needs to know is which. Seen live: a run died on that exact string.
+ */
+function rootCause(err: SolariError): { status?: number; text: string } {
+  let cause: unknown = err.cause;
+  for (let hop = 0; hop < 4 && cause; hop++) {
+    if (cause instanceof SolariError) {
+      if (cause.status) return { status: cause.status, text: cause.message };
+      cause = cause.cause;
+      continue;
+    }
+    if (cause instanceof Error) return { text: cause.message };
+    return { text: String(cause) };
+  }
+  return { text: err.message };
+}
+
 function friendly(err: unknown): SolariUnavailableError {
   if (err instanceof SolariError) {
     switch (err.code) {
@@ -53,8 +76,26 @@ function friendly(err: unknown): SolariUnavailableError {
           err.code,
         );
       default:
-        return new SolariUnavailableError(err.message, err.code);
+        break;
     }
+    if (/exhausted \d+ attempts/.test(err.message)) {
+      const root = rootCause(err);
+      const why =
+        root.status && root.status >= 500
+          ? `Solari answered ${root.status} to every attempt, so the fault is on their side, not with this key.`
+          : `Solari could not be reached: ${root.text}`;
+      return new SolariUnavailableError(`${why} Nothing was charged and no session was created.`);
+    }
+    if (err.status === 401 || err.status === 403) {
+      return new SolariUnavailableError(
+        "Solari rejected the API key. Check SOLARI_API_KEY in .env.local.",
+        err.code,
+      );
+    }
+    if (err.status === 429) {
+      return new SolariUnavailableError("Solari is rate limiting this key. Try again shortly.", err.code);
+    }
+    return new SolariUnavailableError(err.message, err.code);
   }
   return new SolariUnavailableError(err instanceof Error ? err.message : String(err));
 }
@@ -68,7 +109,12 @@ export async function launchBrowser(opts: { stealth?: boolean } = {}): Promise<L
   const apiKey = process.env.SOLARI_API_KEY;
   if (!apiKey) throw new SolariUnavailableError("SOLARI_API_KEY not set");
 
-  const solari = new Solari({ apiKey });
+  // Three attempts, not the default two, and a backoff long enough to be worth
+  // making: session creation is the one call the whole run depends on, and a run
+  // lost to a single 503 costs the user two minutes and tells them nothing about
+  // their site. Seen live: two attempts, both 503, verdict F. The retries are
+  // free, and 502/503/504 is all the SDK will retry.
+  const solari = new Solari({ apiKey, maxAttempts: 3, backoffMs: 1500 });
   const base: LaunchOptions = { recording: true, retries: 1 };
   const wantStealth = opts.stealth !== false;
 

@@ -72,6 +72,12 @@ const SELECTABLE = new Set(["combobox", "listbox"]);
 /** How many choices to show per dropdown. A country list has 200 and needs none of them. */
 const MAX_OPTIONS = 12;
 
+/**
+ * Roles that take the page over while they are open. Everything behind one is
+ * covered by its backdrop, so a click on it can never land.
+ */
+const MODAL = new Set(["dialog", "alertdialog"]);
+
 const MAX_ELEMENTS = 60;
 const MAX_TEXT = 2800;
 /** Snapshots run a few KB. Past this the page is beyond what one prompt can hold. */
@@ -144,6 +150,36 @@ function inferName(nodes: Node[], before: number): string {
   return "";
 }
 
+/**
+ * The window of nodes a visitor can actually reach.
+ *
+ * An open modal covers the page behind it, but the page behind it is still in
+ * the accessibility tree, so the model is offered buttons whose click cannot
+ * land. Measured on a live run: with the booking modal open, three consecutive
+ * clicks on "Book Now" and "Book this ritual" behind the backdrop each burned
+ * their whole ceiling, ending the run seven steps in. When a modal is open, only
+ * what is inside it is on offer.
+ *
+ * The topmost modal wins, and a modal holding nothing to operate is ignored
+ * rather than reported as an empty page.
+ */
+function reachable(nodes: Node[]): Node[] {
+  for (let i = nodes.length - 1; i >= 0; i--) {
+    if (!MODAL.has(nodes[i].role)) continue;
+    const open = nodes[i].indent;
+    let end = nodes.length;
+    for (let j = i + 1; j < nodes.length; j++) {
+      if (nodes[j].indent <= open) {
+        end = j;
+        break;
+      }
+    }
+    const inside = nodes.slice(i + 1, end);
+    if (inside.some((n) => INTERACTIVE.has(n.role) && !n.disabled)) return inside;
+  }
+  return nodes;
+}
+
 /** Turn one aria snapshot into the numbered list the model addresses by index. */
 export function parseAriaSnapshot(snapshot: string): PerceivedElement[] {
   const nodes: Node[] = [];
@@ -192,12 +228,13 @@ export function parseAriaSnapshot(snapshot: string): PerceivedElement[] {
 
   const out: PerceivedElement[] = [];
   const seen = new Set<string>();
+  const visible = reachable(nodes);
 
-  for (let i = 0; i < nodes.length && out.length < MAX_ELEMENTS; i++) {
-    const n = nodes[i];
+  for (let i = 0; i < visible.length && out.length < MAX_ELEMENTS; i++) {
+    const n = visible[i];
     if (!INTERACTIVE.has(n.role) || n.disabled) continue;
 
-    const name = n.name || inferName(nodes, i);
+    const name = n.name || inferName(visible, i);
     if (COLLAPSIBLE.has(n.role)) {
       const key = `${n.role}::${name.toLowerCase()}::${n.href ?? ""}`;
       if (seen.has(key)) continue;

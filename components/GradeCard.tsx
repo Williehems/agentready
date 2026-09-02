@@ -26,6 +26,28 @@ const ORDER: Milestone[] = [
 export function GradeCard({ verdict, url }: { verdict: Verdict; url: string }) {
   const hit = new Set(verdict.milestones);
 
+  // The run never reached the site. Showing the letter here would publish a
+  // grade nothing was measured for, and the empty progress and blocker panels
+  // would read as findings about a site the agent never saw.
+  if (verdict.inconclusive) {
+    return (
+      <section className="animate-fade-up border border-line bg-surface">
+        <header className="flex items-stretch">
+          <div className="flex w-28 shrink-0 items-center justify-center border-r border-line text-6xl font-bold leading-none text-dim">
+            &mdash;
+          </div>
+          <div className="flex flex-1 flex-col justify-center gap-1 px-5 py-4">
+            <div className="text-[11px] uppercase tracking-widest text-dim">No verdict</div>
+            <p className="text-sm leading-relaxed text-text">{verdict.summary}</p>
+            <div className="text-[11px] text-muted">
+              nothing observed · {new URL(url).hostname}
+            </div>
+          </div>
+        </header>
+      </section>
+    );
+  }
+
   return (
     <section className="animate-fade-up border border-line bg-surface">
       <header className="flex items-stretch border-b border-line">

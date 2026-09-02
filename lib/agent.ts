@@ -433,11 +433,12 @@ export async function runAudit(opts: RunOptions): Promise<void> {
       }
     }
   } catch (err) {
-    await emit({
-      type: "error",
-      message: err instanceof Error ? err.message : String(err),
-      at: now(),
-    });
+    const message = err instanceof Error ? err.message : String(err);
+    // Never having looked at the page is ours, not the site's: the browser, the
+    // tab, or the run directory failed before the first perception. Recorded as
+    // abandoned so the verdict comes back as no verdict instead of an F.
+    if (!perceptions.length) abandoned ??= message;
+    await emit({ type: "error", message, at: now() });
   } finally {
     // Order matters: release the session first, because the recording is only
     // uploaded once released, and close the client last, because nothing else

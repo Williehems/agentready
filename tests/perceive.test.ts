@@ -230,6 +230,66 @@ describe("parseAriaSnapshot: dropdowns", () => {
   });
 });
 
+describe("parseAriaSnapshot: an open modal", () => {
+  /**
+   * The page behind the booking modal is still in the tree. A real visitor cannot
+   * touch it, and neither can an agent: measured live, three clicks on the page's
+   * own CTAs behind the backdrop each burned their whole ceiling and ended the run.
+   */
+  const PAGE_WITH_MODAL = `- generic [ref=e1]:
+  - link "Home" [ref=e2]:
+    - /url: /
+  - button "Book this ritual" [ref=e3] [cursor=pointer]
+  - button "Book Now" [ref=e4] [cursor=pointer]
+- dialog "Book a session" [ref=e10]:
+  - generic [ref=e11]:
+    - textbox "Your Name" [ref=e12]
+    - button "Confirm Booking" [ref=e13] [cursor=pointer]
+    - button "Close" [ref=e14] [cursor=pointer]`;
+
+  it("offers only what is inside the modal", () => {
+    assert.deepEqual(
+      parseAriaSnapshot(PAGE_WITH_MODAL).map((e) => e.name),
+      ["Your Name", "Confirm Booking", "Close"],
+    );
+  });
+
+  it("numbers the modal's controls from one, so the model can address them", () => {
+    const els = parseAriaSnapshot(PAGE_WITH_MODAL);
+    assert.deepEqual(
+      els.map((e) => e.index),
+      [1, 2, 3],
+    );
+    assert.equal(els[0].ref, "e12");
+  });
+
+  it("takes the topmost modal when two are open", () => {
+    const stacked = `${PAGE_WITH_MODAL}
+- dialog "Are you sure?" [ref=e20]:
+  - button "Yes" [ref=e21]
+  - button "No" [ref=e22]`;
+    assert.deepEqual(
+      parseAriaSnapshot(stacked).map((e) => e.name),
+      ["Yes", "No"],
+    );
+  });
+
+  it("ignores a modal with nothing to operate rather than reporting a blank page", () => {
+    const notice = `- button "Book Now" [ref=e1]
+- dialog "Please wait" [ref=e2]:
+  - paragraph [ref=e3]: Loading your slot`;
+    assert.deepEqual(
+      parseAriaSnapshot(notice).map((e) => e.name),
+      ["Book Now"],
+    );
+  });
+
+  it("keeps the whole page when no modal is open", () => {
+    const plain = `- button "Book this ritual" [ref=e1]\n- button "Book Now" [ref=e2]`;
+    assert.equal(parseAriaSnapshot(plain).length, 2);
+  });
+});
+
 describe("renderState", () => {
   function perception(over: Partial<Perception> = {}): Perception {
     return {

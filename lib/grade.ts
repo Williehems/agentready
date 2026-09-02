@@ -151,7 +151,14 @@ export function grade(t: Transcript): Verdict {
     });
   }
 
-  if ((t.action === "purchase" || t.action === "signup") && !t.perceptions.some((p) => p.hasPrice)) {
+  // Guarded on having looked at all: with no perception the price test is
+  // vacuously true, and a run that never loaded the page would be charged for a
+  // missing price it was never in a position to see.
+  if (
+    firstPerception &&
+    (t.action === "purchase" || t.action === "signup") &&
+    !t.perceptions.some((p) => p.hasPrice)
+  ) {
     blockers.push({
       blocker: "no-structured-price",
       detail:
@@ -192,7 +199,11 @@ export function grade(t: Transcript): Verdict {
     }
   }
 
-  if (!firstPerception) {
+  // Nothing was ever perceived. Either the site never answered, which is its
+  // finding, or we never got a browser to look with, which is ours: a run that
+  // never reached the site is reported as no verdict rather than an F.
+  const neverArrived = !firstPerception;
+  if (neverArrived && !t.abandoned) {
     blockers.push({ blocker: "nav-error", detail: "The page never loaded." });
   }
 
@@ -234,13 +245,16 @@ export function grade(t: Transcript): Verdict {
   const letter: Grade =
     score >= 88 ? "A" : score >= 72 ? "B" : score >= 55 ? "C" : score >= 35 ? "D" : "F";
 
+  const inconclusive = neverArrived && Boolean(t.abandoned);
+
   return {
     grade: letter,
     score,
     milestones,
     blockers,
     steps: t.stepCount,
-    summary: summarise(letter, t, milestones, blockers, spec.label),
+    summary: summarise(letter, t, milestones, blockers, spec.label, inconclusive),
+    ...(inconclusive ? { inconclusive: true as const } : {}),
   };
 }
 
@@ -250,6 +264,7 @@ function summarise(
   milestones: Milestone[],
   blockers: BlockerHit[],
   actionLabel: string,
+  inconclusive = false,
 ): string {
   const task = actionLabel.toLowerCase();
   // Said first, because it changes how every number after it should be read.
@@ -257,6 +272,9 @@ function summarise(
     ? ` The run stopped early for a reason outside the site (${t.abandoned}), so this is a floor, not a ceiling.`
     : "";
 
+  if (inconclusive) {
+    return `No verdict: the run never reached the site (${t.abandoned}), so there is nothing to grade. Nothing here is a finding about ${task}.`;
+  }
   if (milestones.includes("completed-action")) {
     return `An AI agent completed "${task}" in ${t.stepCount} steps.${
       blockers.length ? ` It worked, but it had to get past ${blockers.length} obstacle(s) on the way.` : ""
