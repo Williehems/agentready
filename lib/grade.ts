@@ -6,7 +6,7 @@ import type {
   Perception,
   Verdict,
 } from "./types";
-import { ACTIONS, isDeadEndHref } from "./actions";
+import { ACTIONS, handoffLabel, isDeadEndHref } from "./actions";
 
 /**
  * Grading is deterministic on purpose. The agent loop produces a transcript;
@@ -29,6 +29,18 @@ export interface Transcript {
   stepCount: number;
   /** True when a launch fell back off stealth, which weakens bot-wall claims. */
   stealth: boolean;
+  /**
+   * URLs the site opened in a tab of its own, in the order they appeared.
+   *
+   * A button is not a link, and a site whose conversion runs through
+   * `onclick="sendToWhatsApp()"` has no href for anyone to inspect. Measured on a
+   * live booking form: nine steps of a working modal, then the submit opened
+   * api.whatsapp.com in a second tab, left the first tab on the home page, and
+   * said nothing anywhere about whether the booking had been received. The href
+   * test saw nothing to charge and the run came back "no blockers", which is the
+   * grader missing the one thing that mattered.
+   */
+  handoffs?: string[];
   /**
    * Set when the run ended for a reason of ours, not the site's: our model quota,
    * our timeout, our budget. It never adds a blocker and never caps the score,
@@ -87,6 +99,16 @@ function allLinksAreDeadEnds(t: Transcript): boolean {
   const links = t.perceptions.flatMap((p) => p.elements.filter((e) => e.role === "link" && e.href));
   if (links.length < 3) return false;
   return links.every((l) => isDeadEndHref(l.href));
+}
+
+/**
+ * The first tab the site opened that a browser agent cannot follow.
+ *
+ * about:blank is skipped: every popup starts there before its real URL arrives,
+ * and a tab still holding it tells us nothing either way.
+ */
+function deadEndHandoff(t: Transcript): string | undefined {
+  return (t.handoffs ?? []).find((u) => u && !u.startsWith("about:") && isDeadEndHref(u));
 }
 
 /**
@@ -149,11 +171,13 @@ export function grade(t: Transcript): Verdict {
   }
 
   const cta = foundCta(t);
-  if (cta.deadEndOnly || allLinksAreDeadEnds(t)) {
+  const handoff = deadEndHandoff(t);
+  if (cta.deadEndOnly || allLinksAreDeadEnds(t) || handoff) {
     blockers.push({
       blocker: "dead-end-cta",
-      detail:
-        "The only route to the action hands off to WhatsApp, phone, or email. A browser agent cannot follow it, so the visit ends here.",
+      detail: handoff
+        ? `The site handed the action off to ${handoffLabel(handoff)} in a separate tab. A browser agent cannot follow it, so the action cannot be finished in the browser.`
+        : "The only route to the action hands off to WhatsApp, phone, or email. A browser agent cannot follow it, so the visit ends here.",
     });
   }
 
@@ -223,7 +247,7 @@ export function grade(t: Transcript): Verdict {
   if (
     t.perceptions.some((p) => p.hasPrice) ||
     (t.action === "integrate" && /```|curl |api key|npm install|pip install/.test(text)) ||
-    (t.action === "contact" && /@|contact/.test(text) && !cta.deadEndOnly) ||
+    (t.action === "contact" && /@|contact/.test(text) && !cta.deadEndOnly && !handoff) ||
     (t.action === "book" && /\b(mon|tue|wed|thu|fri|sat|sun)\w*\b|\bam\b|\bpm\b|available/.test(text))
   ) {
     milestones.push("found-key-info");

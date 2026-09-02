@@ -191,6 +191,61 @@ describe("grade: dead-end CTAs", () => {
   });
 });
 
+describe("grade: a handoff to another app", () => {
+  /**
+   * The run this is for. A working booking modal, nine steps of real progress, and
+   * a submit that ran `onclick="sendToWhatsApp()"`: WhatsApp opened in a second
+   * tab, the first tab went back to the home page, and nothing anywhere said the
+   * booking had been received. There is no href on a button, so the link tests saw
+   * nothing to charge and the verdict came back "without hitting a specific
+   * blocker" on a site an agent cannot book with.
+   */
+  const spa = (over: Partial<Transcript> = {}) =>
+    transcript({
+      action: "book",
+      perceptions: [
+        page({
+          text: `${PROSE} open Monday to Friday, 9am to 6pm`,
+          elements: [el(1, "button", "Book Now"), el(2, "link", "Our story", "/story")],
+        }),
+      ],
+      handoffs: ["https://api.whatsapp.com/send/?phone=2348099224450&text=Hi+Escape+House"],
+      ...over,
+    });
+
+  it("flags the tab a button opened, which no href test can see", () => {
+    assert.ok(blockers(spa()).includes("dead-end-cta"));
+  });
+
+  it("names the app in words the site owner will recognise as their own button", () => {
+    const hit = grade(spa()).blockers.find((b) => b.blocker === "dead-end-cta")!;
+    assert.match(hit.detail, /handed the action off to WhatsApp in a separate tab/);
+    assert.doesNotMatch(hit.detail, /api\.whatsapp\.com/, "the URL is not the name of the thing");
+  });
+
+  it("caps the grade like any other hard blocker, and says one thing rather than two", () => {
+    const v = grade(spa());
+    assert.equal(v.blockers.filter((b) => b.blocker === "dead-end-cta").length, 1);
+    assert.ok(v.milestones.includes("found-cta"), "the CTA was found and it worked for nine steps");
+    assert.equal(v.score, 45, "capped, not the 60 those milestones add up to");
+    assert.equal(v.grade, "D");
+  });
+
+  it("ignores a tab that opened on nothing, which is where every popup starts", () => {
+    assert.ok(!blockers(spa({ handoffs: ["about:blank"] })).includes("dead-end-cta"));
+  });
+
+  it("says nothing about a new tab an agent could have followed", () => {
+    const docs = spa({ handoffs: ["https://docs.stripe.com/api"] });
+    assert.deepEqual(blockers(docs), [], "opening docs in a new tab is not a dead end");
+  });
+
+  it("withholds a working contact route from a site that only opens WhatsApp", () => {
+    const t = spa({ action: "contact", perceptions: [page({ text: `${PROSE} contact us` })] });
+    assert.ok(!grade(t).milestones.includes("found-key-info"));
+  });
+});
+
 describe("grade: the soft findings", () => {
   it("flags a missing machine-readable price for purchase and signup only", () => {
     for (const action of ["purchase", "signup"] as ActionKind[]) {

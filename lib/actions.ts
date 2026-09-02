@@ -48,8 +48,19 @@ export const ACTIONS: Record<ActionKind, ActionSpec> = {
   book: {
     id: "book",
     label: "Book an appointment",
+    /**
+     * Pressing submit is the measurement, not a step past it.
+     *
+     * This used to end at "stop before final confirmation", and two live runs
+     * showed what that costs: with the form filled and the send button on screen,
+     * the model had been told to stop there, so one gave up and the other pressed
+     * it only by accident. Everything worth finding is at that button. On the site
+     * this was measured against, pressing it opens WhatsApp in another tab and the
+     * booking is never made, which is the finding, and it is invisible to a run
+     * that stops one click short of it.
+     */
     goal:
-      "Book an appointment, demo, or reservation. Get as far as choosing a date or time slot and entering details, then stop before final confirmation.",
+      "Book an appointment, demo, or reservation. Pick whatever slot or time the site offers, fill in the visitor details it asks for, then press the control that submits the booking request. Never enter payment card details.",
     keyInfo: "available times or dates, and what the appointment is for",
     ctaHints: ["book", "reserve", "schedule", "appointment", "demo", "consultation", "request a demo", "talk to sales"],
     urlHints: ["book", "booking", "reserve", "schedule", "appointment", "demo", "calendar"],
@@ -72,10 +83,69 @@ export const ACTION_LIST: ActionSpec[] = Object.values(ACTIONS);
  * complete. A site whose only route to conversion is one of these is a
  * dead end for every machine visitor, which is the dead-end-cta blocker.
  */
-export const DEAD_END_SCHEMES = ["wa.me", "whatsapp://", "api.whatsapp.com", "tel:", "mailto:", "sms:", "fb-messenger://", "viber://", "t.me"];
+/**
+ * Protocols that leave the browser for another application entirely. Nothing an
+ * agent can do with one of these, and nothing a machine visitor can complete
+ * beyond it.
+ */
+export const DEAD_END_PROTOCOLS = [
+  "tel:", "mailto:", "sms:", "whatsapp:", "fb-messenger:", "viber:", "tg:",
+];
+
+/**
+ * Hosts whose whole purpose is to hand the visitor to a chat app. Reaching one
+ * requires an account and a session in that app, which no fresh browser has.
+ */
+export const DEAD_END_HOSTS = [
+  "wa.me", "whatsapp.com", "t.me", "telegram.me", "m.me", "messenger.com",
+];
+
+/**
+ * The host an href points at, or undefined when it points at this site.
+ *
+ * Written out rather than done with `includes`, because substrings lie: "t.me"
+ * appears inside "client.metrics.com" and "support.medium.com", and matching that
+ * way charges an ordinary link with being a Telegram handoff. A dead end is a
+ * property of the host, so the host is what gets compared.
+ */
+function hostOf(url: string): string | undefined {
+  try {
+    return new URL(url).hostname;
+  } catch {
+    // Not absolute: either protocol-relative (//wa.me/234), bare (wa.me/234), or
+    // a path on this site, which is not a handoff at all.
+  }
+  return /^(?:\/\/)?([a-z0-9.-]+\.[a-z]{2,})(?:[/:?#]|$)/.exec(url)?.[1];
+}
 
 export function isDeadEndHref(href: string | undefined): boolean {
   if (!href) return false;
-  const h = href.toLowerCase();
-  return DEAD_END_SCHEMES.some((s) => h.startsWith(s) || h.includes(`//${s}`) || h.includes(s));
+  const h = href.trim().toLowerCase();
+  if (DEAD_END_PROTOCOLS.some((p) => h.startsWith(p))) return true;
+  const host = hostOf(h);
+  return host !== undefined && DEAD_END_HOSTS.some((d) => host === d || host.endsWith(`.${d}`));
+}
+
+/**
+ * What to call a handoff destination in a finding a site owner will read.
+ *
+ * "api.whatsapp.com" is what the URL says; "WhatsApp" is what they built. A
+ * finding they cannot recognise as their own button is a finding they will not
+ * act on.
+ */
+export function handoffLabel(url: string): string {
+  const u = url.trim().toLowerCase();
+  if (u.startsWith("tel:")) return "a phone dialler";
+  if (u.startsWith("sms:")) return "a text-message app";
+  if (u.startsWith("mailto:")) return "an email client";
+  const host = hostOf(u) ?? "";
+  if (u.startsWith("whatsapp:") || host === "wa.me" || host.endsWith("whatsapp.com")) {
+    return "WhatsApp";
+  }
+  if (u.startsWith("tg:") || host === "t.me" || host.endsWith("telegram.me")) return "Telegram";
+  if (u.startsWith("fb-messenger:") || host === "m.me" || host.endsWith("messenger.com")) {
+    return "Facebook Messenger";
+  }
+  if (u.startsWith("viber:")) return "Viber";
+  return host || "another app";
 }

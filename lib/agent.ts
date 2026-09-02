@@ -1,7 +1,7 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
-import { ACTIONS } from "./actions";
+import { ACTIONS, handoffLabel } from "./actions";
 import { Deadline, TimeoutError, withTimeout } from "./deadline";
 import { groqJson } from "./groq";
 import { type AgentPage, perceive, renderState } from "./perceive";
@@ -46,6 +46,48 @@ const DecisionSchema = z.object({
 });
 
 type Decision = z.infer<typeof DecisionSchema>;
+
+/**
+ * Verbs a model reaches for instead of ours, and which of ours it meant.
+ *
+ * Not guesswork: each of these has exactly one reading against the action list in
+ * the prompt. Rejecting them ends the whole run over a synonym.
+ */
+const VERBS: Record<string, Decision["action"]> = {
+  press: "click", tap: "click", submit: "click", clic: "click",
+  fill: "type", fill_in: "type", input: "type", enter: "type", write: "type", set: "type",
+  choose: "select", pick: "select", select_option: "select", dropdown: "select",
+  scroll_down: "scroll", scrolldown: "scroll",
+  go_back: "back", goback: "back", navigate_back: "back",
+  finish: "done", finished: "done", complete: "done", completed: "done",
+  giveup: "give_up", abort: "give_up", quit: "give_up",
+};
+
+/**
+ * The model's answer as a decision, or nothing when it cannot be read as one.
+ *
+ * Two things go wrong often enough to cost runs, and both are the right decision
+ * written differently. A model fills in every field it was shown and puts
+ * `"value": null` on the ones its action does not use, which a schema of optional
+ * strings rejects outright. And it reaches for a neighbouring verb: "submit" for a
+ * click, "fill" for a type. Measured live: a run died at step 8 with the booking
+ * form filled in and the submit button on screen.
+ */
+export function usable(raw: unknown): Decision | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const clean: Record<string, unknown> = {};
+  // A field the model explicitly left empty is a field it did not set, and the
+  // schema reads absent and null very differently.
+  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+    if (v !== null && v !== "") clean[k] = v;
+  }
+  if (typeof clean.action === "string") {
+    const verb = clean.action.trim().toLowerCase().replace(/[\s-]+/g, "_");
+    clean.action = VERBS[verb] ?? verb;
+  }
+  const parsed = DecisionSchema.safeParse(clean);
+  return parsed.success ? parsed.data : undefined;
+}
 
 /**
  * A decision, or the reason there is no decision.
@@ -120,6 +162,9 @@ Rules:
   can reach without paying and without a pre-existing account credential.
 - "give_up" means this site cannot be used for this task. Explain why in reasoning.
   Prefer give_up over clicking things at random.
+- give_up is for a site you cannot use, not for a step you cannot find. A form only
+  shows you where you are now, so a field you passed earlier is not missing. If the
+  control that finishes the task is in the list, use it.
 - If the element list is empty, the page is unreadable to you: give_up.
 - Do not repeat an action that already failed or already left the page unchanged.`;
 }
@@ -153,14 +198,16 @@ async function decide(
       ],
       { maxTokens: 600, temperature: 0.1, timeoutMs },
     );
-    const parsed = DecisionSchema.safeParse(raw);
-    if (parsed.success) return { kind: "decided", decision: parsed.data };
+    const parsed = usable(raw);
+    if (parsed) return { kind: "decided", decision: parsed };
     // A malformed answer is the model's failure, not the site's, but it is also
     // the model looking at this page: one retry-free give_up keeps the run honest
-    // without pretending the site caused it.
+    // without pretending the site caused it. What it actually said is carried
+    // along, because a run that dies here and keeps no record of why cannot be
+    // fixed: the first time this happened it took a whole audit with it.
     return {
       kind: "unavailable",
-      why: "the model did not return a usable action for this page",
+      why: `the model did not return a usable action for this page: ${JSON.stringify(raw).slice(0, 160)}`,
     };
   } catch (err) {
     return { kind: "unavailable", why: err instanceof Error ? err.message : String(err) };
@@ -185,7 +232,23 @@ interface ActPage extends AgentPage {
   screenshot(opts: { type: "jpeg"; quality: number }): Promise<Buffer>;
   setViewportSize(size: { width: number; height: number }): Promise<void>;
   goto(url: string, opts?: { timeout?: number; waitUntil?: "domcontentloaded" }): Promise<unknown>;
+  context(): Contextish;
 }
+
+/** A tab, as far as watching where a click sent the visitor needs to care. */
+interface Tabbish {
+  url(): string;
+}
+
+/**
+ * The browser context, for one purpose: knowing when the site opened a tab of its
+ * own. A button running `onclick="sendToWhatsApp()"` has no href for anyone to
+ * inspect, so the only way to see where it went is to watch what it opened.
+ */
+interface Contextish {
+  on(event: "page", handler: (p: Tabbish) => void): void;
+}
+
 
 interface Locatorish {
   first(): Locatorish;
@@ -279,6 +342,41 @@ export async function runAudit(opts: RunOptions): Promise<void> {
   let abandoned: string | undefined;
   let launched: Awaited<ReturnType<typeof launchBrowser>> | undefined;
 
+  /**
+   * Tabs the site opened for itself, and the URLs they settled on.
+   *
+   * Kept apart because a popup's URL is not there when it opens: measured, the
+   * event fires on about:blank and the real destination arrives a moment later. So
+   * the tab is remembered and read again after each step.
+   */
+  const opened: Tabbish[] = [];
+  const handoffs = new Set<string>();
+  /** Re-read the remembered tabs, returning whatever address is new since last time. */
+  const sweepTabs = (): string[] => {
+    const fresh: string[] = [];
+    for (const tab of opened) {
+      let at = "";
+      try {
+        at = tab.url();
+      } catch {
+        continue; // A tab closed underneath us tells us nothing.
+      }
+      if (!at || at.startsWith("about:") || handoffs.has(at)) continue;
+      handoffs.add(at);
+      fresh.push(at);
+    }
+    return fresh;
+  };
+  const reportTabs = async () => {
+    for (const at of sweepTabs()) {
+      await emit({
+        type: "status",
+        message: `The site opened ${handoffLabel(at)} in a tab of its own: ${at.slice(0, 120)}`,
+        at: now(),
+      });
+    }
+  };
+
   try {
     await mkdir(shotDir, { recursive: true });
     await emit({ type: "status", message: "Acquiring a stealth browser", at: now() });
@@ -301,6 +399,11 @@ export async function runAudit(opts: RunOptions): Promise<void> {
       "opening a tab",
     )) as unknown as ActPage;
     await page.setViewportSize({ width: 1280, height: 800 }).catch(() => {});
+    try {
+      page.context().on("page", (tab) => opened.push(tab));
+    } catch {
+      // Nothing to watch with: a handoff goes unobserved rather than ending the run.
+    }
 
     await emit({ type: "status", message: `Opening ${url}`, at: now() });
     try {
@@ -424,6 +527,10 @@ export async function runAudit(opts: RunOptions): Promise<void> {
         at: now(),
       });
 
+      // Read after the step is reported, so the note about where a click sent the
+      // visitor follows the click rather than preceding it.
+      await reportTabs();
+
       if (stalls >= STALL_LIMIT) {
         abandoned = `the browser stopped answering: ${stalls} actions in a row hung past their own timeout`;
         await emit({
@@ -442,6 +549,10 @@ export async function runAudit(opts: RunOptions): Promise<void> {
     if (!perceptions.length) abandoned ??= message;
     await emit({ type: "error", message, at: now() });
   } finally {
+    // A tab opened by the very last action has had no step after it to notice it,
+    // and that action is the submit: the one most likely to hand off.
+    await reportTabs().catch(() => {});
+
     // Order matters: release the session first, because the recording is only
     // uploaded once released, and close the client last, because nothing else
     // can talk to Solari afterwards and the process will not exit without it.
@@ -481,6 +592,7 @@ export async function runAudit(opts: RunOptions): Promise<void> {
       stepCount,
       stealth: launched?.stealth ?? false,
       abandoned,
+      handoffs: Array.from(handoffs),
     };
     const verdict = grade(transcript);
     if (sessionId) verdict.sessionId = sessionId;
