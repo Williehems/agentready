@@ -249,13 +249,26 @@ describe("parseAriaSnapshot: an open modal", () => {
 
   it("offers only what is inside the modal", () => {
     assert.deepEqual(
-      parseAriaSnapshot(PAGE_WITH_MODAL).map((e) => e.name),
+      parseAriaSnapshot(PAGE_WITH_MODAL, true).map((e) => e.name),
       ["Your Name", "Confirm Booking", "Close"],
     );
   });
 
+  /**
+   * The one that cost a live run. A closed overlay hidden with `opacity: 0` and
+   * `pointer-events: none` keeps its whole subtree in the accessibility tree, so
+   * the snapshot alone cannot tell open from closed. Restricting the page to a
+   * modal nobody opened sent the agent clicking into a void, 25s a step.
+   */
+  it("offers the whole page when the dialog is in the tree but not on the screen", () => {
+    assert.deepEqual(
+      parseAriaSnapshot(PAGE_WITH_MODAL).map((e) => e.name),
+      ["Home", "Book this ritual", "Book Now", "Your Name", "Confirm Booking", "Close"],
+    );
+  });
+
   it("numbers the modal's controls from one, so the model can address them", () => {
-    const els = parseAriaSnapshot(PAGE_WITH_MODAL);
+    const els = parseAriaSnapshot(PAGE_WITH_MODAL, true);
     assert.deepEqual(
       els.map((e) => e.index),
       [1, 2, 3],
@@ -269,7 +282,7 @@ describe("parseAriaSnapshot: an open modal", () => {
   - button "Yes" [ref=e21]
   - button "No" [ref=e22]`;
     assert.deepEqual(
-      parseAriaSnapshot(stacked).map((e) => e.name),
+      parseAriaSnapshot(stacked, true).map((e) => e.name),
       ["Yes", "No"],
     );
   });
@@ -279,14 +292,14 @@ describe("parseAriaSnapshot: an open modal", () => {
 - dialog "Please wait" [ref=e2]:
   - paragraph [ref=e3]: Loading your slot`;
     assert.deepEqual(
-      parseAriaSnapshot(notice).map((e) => e.name),
+      parseAriaSnapshot(notice, true).map((e) => e.name),
       ["Book Now"],
     );
   });
 
   it("keeps the whole page when no modal is open", () => {
     const plain = `- button "Book this ritual" [ref=e1]\n- button "Book Now" [ref=e2]`;
-    assert.equal(parseAriaSnapshot(plain).length, 2);
+    assert.equal(parseAriaSnapshot(plain, true).length, 2);
   });
 });
 

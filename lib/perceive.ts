@@ -78,6 +78,61 @@ const MAX_OPTIONS = 12;
  */
 const MODAL = new Set(["dialog", "alertdialog"]);
 
+/**
+ * Is a modal actually covering the page?
+ *
+ * The accessibility tree cannot say, and this is the whole reason the DOM has to
+ * be asked. A modal hidden with `opacity: 0` and `pointer-events: none` keeps
+ * every one of its controls in the tree, so a dialog node is not evidence of an
+ * open dialog. Verified in the markup of a live booking site:
+ *
+ *   .overlay      { position: fixed; inset: 0; opacity: 0; pointer-events: none }
+ *   .overlay.open { opacity: 1; pointer-events: all }
+ *
+ * with `role="dialog" aria-modal="true"` on the overlay from page load. Treating
+ * that as open sent the agent clicking into a void, 25s a step, twice.
+ * `display: none` and `visibility: hidden` do drop out of the tree, so it is the
+ * rest that matter here.
+ *
+ * Covering means it takes pointer events and either declares itself modal or
+ * fills most of the viewport: a visible chat widget with `role="dialog"` traps
+ * nothing and must not shrink the page to itself.
+ *
+ * Runs in the page, so it closes over nothing.
+ */
+function modalIsOpen(): boolean {
+  const candidates = document.querySelectorAll(
+    'dialog[open], [aria-modal="true"], [role="dialog"], [role="alertdialog"]',
+  );
+
+  for (const el of Array.from(candidates)) {
+    const own = getComputedStyle(el);
+    if (own.pointerEvents === "none") continue;
+
+    // Opacity and visibility inherit their effect down the tree: an overlay
+    // faded out by its wrapper is just as untouchable as one faded out itself.
+    let hidden = false;
+    let node: Element | null = el;
+    for (let hop = 0; hop < 8 && node; hop++, node = node.parentElement) {
+      const s = getComputedStyle(node);
+      if (s.display === "none" || s.visibility === "hidden" || Number(s.opacity) === 0) {
+        hidden = true;
+        break;
+      }
+    }
+    if (hidden) continue;
+
+    const box = el.getBoundingClientRect();
+    if (box.width < 1 || box.height < 1) continue;
+
+    if (el.getAttribute("aria-modal") === "true") return true;
+    const viewport = window.innerWidth * window.innerHeight;
+    if (viewport > 0 && (box.width * box.height) / viewport >= 0.55) return true;
+  }
+
+  return false;
+}
+
 const MAX_ELEMENTS = 60;
 const MAX_TEXT = 2800;
 /** Snapshots run a few KB. Past this the page is beyond what one prompt can hold. */
@@ -180,8 +235,14 @@ function reachable(nodes: Node[]): Node[] {
   return nodes;
 }
 
-/** Turn one aria snapshot into the numbered list the model addresses by index. */
-export function parseAriaSnapshot(snapshot: string): PerceivedElement[] {
+/**
+ * Turn one aria snapshot into the numbered list the model addresses by index.
+ *
+ * `modalOpen` comes from the DOM, never from the snapshot, and defaults to false:
+ * without positive evidence that a dialog is covering the page, the whole page is
+ * on offer. Guessing the other way costs a run.
+ */
+export function parseAriaSnapshot(snapshot: string, modalOpen = false): PerceivedElement[] {
   const nodes: Node[] = [];
 
   for (const raw of snapshot.slice(0, MAX_SNAPSHOT).split("\n")) {
@@ -228,7 +289,7 @@ export function parseAriaSnapshot(snapshot: string): PerceivedElement[] {
 
   const out: PerceivedElement[] = [];
   const seen = new Set<string>();
-  const visible = reachable(nodes);
+  const visible = modalOpen ? reachable(nodes) : nodes;
 
   for (let i = 0; i < visible.length && out.length < MAX_ELEMENTS; i++) {
     const n = visible[i];
@@ -270,7 +331,7 @@ async function attempt<T>(fn: () => Promise<T>, fallback: T, timeoutMs: number):
 }
 
 export async function perceive(page: AgentPage, timeoutMs = PERCEIVE_MS): Promise<Perception> {
-  const [snapshot, rawText, title] = await Promise.all([
+  const [snapshot, rawText, title, modalOpen] = await Promise.all([
     attempt(() => page.ariaSnapshot({ mode: "ai" }), "", timeoutMs),
     attempt(
       () => page.evaluate<string>(() => (document.body ? document.body.innerText : "")),
@@ -278,9 +339,12 @@ export async function perceive(page: AgentPage, timeoutMs = PERCEIVE_MS): Promis
       timeoutMs,
     ),
     attempt(() => page.title(), "", timeoutMs),
+    // False on failure: a probe that did not answer is not evidence of a modal,
+    // and restricting the page on a guess is what this probe exists to prevent.
+    attempt(() => page.evaluate<boolean>(modalIsOpen), false, timeoutMs),
   ]);
 
-  const elements = parseAriaSnapshot(snapshot);
+  const elements = parseAriaSnapshot(snapshot, modalOpen);
   const text = rawText.replace(/\s*\n\s*\n\s*/g, "\n").trim().slice(0, MAX_TEXT);
 
   return {

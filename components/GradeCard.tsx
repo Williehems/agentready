@@ -28,13 +28,15 @@ export function GradeCard({ verdict, url }: { verdict: Verdict; url: string }) {
 
   // The run never reached the site. Showing the letter here would publish a
   // grade nothing was measured for, and the empty progress and blocker panels
-  // would read as findings about a site the agent never saw.
+  // would read as findings about a site the agent never saw. The cell keeps its
+  // width so the card still lines up with a real verdict, and says "n/a" rather
+  // than a dash, which at this size reads as a rendering fault.
   if (verdict.inconclusive) {
     return (
       <section className="animate-fade-up border border-line bg-surface">
         <header className="flex items-stretch">
-          <div className="flex w-28 shrink-0 items-center justify-center border-r border-line text-6xl font-bold leading-none text-dim">
-            &mdash;
+          <div className="flex w-28 shrink-0 items-center justify-center border-r border-line py-6 text-3xl font-bold leading-none text-dim">
+            n/a
           </div>
           <div className="flex flex-1 flex-col justify-center gap-1 px-5 py-4">
             <div className="text-[11px] uppercase tracking-widest text-dim">No verdict</div>
