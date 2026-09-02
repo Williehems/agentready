@@ -115,7 +115,17 @@ export async function launchBrowser(opts: { stealth?: boolean } = {}): Promise<L
   // their site. Seen live: two attempts, both 503, verdict F. The retries are
   // free, and 502/503/504 is all the SDK will retry.
   const solari = new Solari({ apiKey, maxAttempts: 3, backoffMs: 1500 });
-  const base: LaunchOptions = { recording: true, retries: 1 };
+  /**
+   * Two re-launches, and a health probe with room to answer.
+   *
+   * The SDK probes the browser after connecting and calls it unhealthy if it does
+   * not respond in 2s. Measured from here, a bare GET to their API is already
+   * 1.7s of round trip, so a 2s budget on a browser that has just booted is
+   * inside the noise: a third live run died on exactly that while the API was
+   * otherwise fine. A slow browser is worth waiting for, and a genuinely dead one
+   * still fails, just later.
+   */
+  const base: LaunchOptions = { recording: true, retries: 2, probeTimeoutMs: 6000 };
   const wantStealth = opts.stealth !== false;
 
   try {

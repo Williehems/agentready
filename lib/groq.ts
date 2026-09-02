@@ -50,6 +50,37 @@ const TIMEOUT_MS = 45_000;
 const RETRY_LIMIT = 2;
 const MAX_BACKOFF_MS = 20_000;
 
+/**
+ * A connection that never carried the request is worth trying again. The POST was
+ * not answered, so no decision was made and nothing was metered, and the cost of
+ * giving up is the entire run: measured live, one such fault at step 0 ended an
+ * audit and threw away a browser session, while the same endpoint answered six
+ * times out of six in 263-975ms from this machine a minute later.
+ */
+const TRANSPORT_RETRIES = 2;
+const TRANSPORT_BACKOFF_MS = 700;
+
+/**
+ * The reason behind a bare "fetch failed", or undefined when the failure was
+ * something else entirely.
+ *
+ * Node reports every network-layer fault as `TypeError: fetch failed` and puts
+ * the actual cause one level down, so a reset connection, a DNS miss and a TLS
+ * failure all read as the same twelve characters. Seen live: a run stopped with
+ * nothing but "fetch failed" against an API that was up.
+ */
+export function transportFault(err: unknown): string | undefined {
+  if (!(err instanceof TypeError) || !/fetch failed|network|socket/i.test(err.message)) {
+    return undefined;
+  }
+  const cause = (err as { cause?: unknown }).cause;
+  if (cause instanceof Error) {
+    const code = (cause as { code?: string }).code;
+    return code ? `${cause.message} (${code})` : cause.message;
+  }
+  return err.message;
+}
+
 /** Groq's 429 body carries "Please try again in 12.239999999s". Believe it. */
 function retryAfterMs(body: string, headers: Headers): number | undefined {
   const header = Number(headers.get("retry-after"));
@@ -104,8 +135,11 @@ export async function groqChat(
   // outlive the budget the caller gave us.
   const clock = AbortSignal.timeout(timeoutMs);
   const started = Date.now();
+  /** Counted apart, because a network blip must not spend the rate-limit budget. */
+  let rateAttempt = 1;
+  let transportRetries = 0;
 
-  for (let attempt = 1; ; attempt++) {
+  for (;;) {
     try {
       const res = await fetch(GROQ_URL, {
         method: "POST",
@@ -126,11 +160,12 @@ export async function groqChat(
         const waitMs = retryAfterMs(text, res.headers);
         const spare = timeoutMs - (Date.now() - started);
         const worthWaiting =
-          attempt < RETRY_LIMIT &&
+          rateAttempt < RETRY_LIMIT &&
           waitMs !== undefined &&
           waitMs <= MAX_BACKOFF_MS &&
           waitMs + 2000 < spare;
         if (!worthWaiting) throw new RateLimitedError(waitMs);
+        rateAttempt++;
         await sleep(waitMs + 300);
         continue;
       }
@@ -149,7 +184,16 @@ export async function groqChat(
       if (err instanceof Error && err.name === "AbortError" && !signal?.aborted) {
         throw new Error(`Groq did not answer within ${Math.round(timeoutMs / 1000)}s`);
       }
-      throw err;
+      const fault = transportFault(err);
+      if (!fault) throw err;
+      const wait = TRANSPORT_BACKOFF_MS * (transportRetries + 1);
+      if (transportRetries < TRANSPORT_RETRIES && wait + 1500 < timeoutMs - (Date.now() - started)) {
+        transportRetries++;
+        await sleep(wait);
+        continue;
+      }
+      // Named, so the run says what went wrong instead of "fetch failed".
+      throw new Error(`Groq could not be reached: ${fault}`);
     }
   }
 }

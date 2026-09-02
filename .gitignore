@@ -16,6 +16,10 @@ next-env.d.ts
 tsconfig.tsbuildinfo
 *.log
 
+# scratch: one-off probes live here because a script outside the project cannot
+# resolve the SDK it needs to probe
+/tmp/
+
 # os
 .DS_Store
 Thumbs.db
