@@ -1,7 +1,7 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
-import { ACTIONS, handoffLabel } from "./actions";
+import { ACTIONS, handoffLabel, isDeadEndHref } from "./actions";
 import { Deadline, TimeoutError, withTimeout } from "./deadline";
 import { groqJson } from "./groq";
 import { type AgentPage, perceive, renderState } from "./perceive";
@@ -37,6 +37,17 @@ const RELEASE_MS = 30_000;
  * was fine. Two could be a heavy page. Three is the browser.
  */
 const STALL_LIMIT = 3;
+/**
+ * How long to let a tab the site just opened settle on its real address.
+ *
+ * A popup is on about:blank at the moment the event fires. Measured on the run
+ * that proved the handoff finding: the sweep straight after the click that opened
+ * the tab still read about:blank, and WhatsApp only showed up one step later,
+ * which filed the finding under a step that had nothing to do with it. Paid once
+ * per tab and only while it is still blank.
+ */
+const POPUP_SETTLE_MS = 250;
+const POPUP_SETTLE_TRIES = 6;
 
 const DecisionSchema = z.object({
   action: z.enum(["click", "type", "select", "scroll", "back", "done", "give_up"]),
@@ -351,15 +362,27 @@ export async function runAudit(opts: RunOptions): Promise<void> {
    */
   const opened: Tabbish[] = [];
   const handoffs = new Set<string>();
+  /** Tabs already given their settling time, so one that never navigates costs it once. */
+  const settled = new Set<Tabbish>();
+  /** Where a tab is now, or nothing when it closed underneath us. */
+  const addressOf = (tab: Tabbish): string | undefined => {
+    try {
+      return tab.url();
+    } catch {
+      return undefined;
+    }
+  };
   /** Re-read the remembered tabs, returning whatever address is new since last time. */
-  const sweepTabs = (): string[] => {
+  const sweepTabs = async (): Promise<string[]> => {
     const fresh: string[] = [];
     for (const tab of opened) {
-      let at = "";
-      try {
-        at = tab.url();
-      } catch {
-        continue; // A tab closed underneath us tells us nothing.
+      let at = addressOf(tab);
+      if (at?.startsWith("about:") && !settled.has(tab)) {
+        settled.add(tab);
+        for (let n = 0; n < POPUP_SETTLE_TRIES && at?.startsWith("about:"); n += 1) {
+          await new Promise((r) => setTimeout(r, POPUP_SETTLE_MS));
+          at = addressOf(tab);
+        }
       }
       if (!at || at.startsWith("about:") || handoffs.has(at)) continue;
       handoffs.add(at);
@@ -367,14 +390,21 @@ export async function runAudit(opts: RunOptions): Promise<void> {
     }
     return fresh;
   };
-  const reportTabs = async () => {
-    for (const at of sweepTabs()) {
+  /**
+   * Report any tab that has appeared since the last look, and say whether one of
+   * them is somewhere an agent cannot follow.
+   */
+  const reportTabs = async (): Promise<string | undefined> => {
+    let deadEnd: string | undefined;
+    for (const at of await sweepTabs()) {
       await emit({
         type: "status",
         message: `The site opened ${handoffLabel(at)} in a tab of its own: ${at.slice(0, 120)}`,
         at: now(),
       });
+      deadEnd ??= isDeadEndHref(at) ? at : undefined;
     }
+    return deadEnd;
   };
 
   try {
@@ -529,7 +559,22 @@ export async function runAudit(opts: RunOptions): Promise<void> {
 
       // Read after the step is reported, so the note about where a click sent the
       // visitor follows the click rather than preceding it.
-      await reportTabs();
+      const handedOff = await reportTabs();
+
+      // The answer, and there is nothing after it. Measured on the run that proved
+      // this finding: the submit opened WhatsApp, the first tab fell back to the
+      // home page, and the model spent the last two steps and sixty seconds of the
+      // budget clicking at a button that had moved. The site cannot be used for
+      // this from a browser, which is the verdict, so the run stops on it rather
+      // than filling the replay with an agent flailing at a page it already lost.
+      if (handedOff) {
+        await emit({
+          type: "status",
+          message: `Stopping after ${stepCount} steps: the action left the browser for ${handoffLabel(handedOff)}, so there is nothing further an agent can do here`,
+          at: now(),
+        });
+        break;
+      }
 
       if (stalls >= STALL_LIMIT) {
         abandoned = `the browser stopped answering: ${stalls} actions in a row hung past their own timeout`;
