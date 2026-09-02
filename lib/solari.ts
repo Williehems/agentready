@@ -92,10 +92,17 @@ export async function launchBrowser(opts: { stealth?: boolean } = {}): Promise<L
 
 /**
  * Release the session slot. Must happen before asking for a replay, because the
- * recording is only uploaded once the session is released.
+ * recording is only uploaded once the session is released. Returns the reason
+ * when release did not confirm, which is also the likeliest reason a replay
+ * never turns up: swallowing it here is what makes a missing replay a mystery.
  */
-export async function releaseSession(browser: BrowserSession): Promise<void> {
-  await browser.close().catch(() => {});
+export async function releaseSession(browser: BrowserSession): Promise<string | undefined> {
+  try {
+    await browser.close();
+    return undefined;
+  } catch (err) {
+    return err instanceof Error ? err.message : String(err);
+  }
 }
 
 /**
@@ -106,26 +113,32 @@ export async function closeClient(solari: Solari): Promise<void> {
   await solari.close().catch(() => {});
 }
 
+export interface ReplayLookup {
+  url?: string;
+  /** True when the recording is merely not uploaded yet, so asking again is worth it. */
+  pending?: boolean;
+  /** Why there is no replay. Worth surfacing: Witness is half the product. */
+  reason?: string;
+}
+
 /**
- * The replay upload happens asynchronously after release, so the first poll
- * routinely 404s on a perfectly good recording. Returns undefined rather than
- * throwing: a missing replay is a degraded result, not a failed run.
+ * One lookup, no waiting.
+ *
+ * Measured on this plan: a released session 404s continuously for at least 103
+ * seconds, then resolves some minutes later. So nothing may hold a request open
+ * waiting for a recording. Ask once, report `pending`, and ask again later.
  */
-export async function getReplayUrl(
-  solari: Solari,
-  sessionId: string,
-  attempts = 5,
-  delayMs = 1500,
-): Promise<string | undefined> {
-  for (let i = 0; i < attempts; i++) {
-    await new Promise((r) => setTimeout(r, delayMs));
-    try {
-      const { url } = await solari.sessions.getReplayUrl(sessionId);
-      if (url) return url;
-    } catch (err) {
-      if (err instanceof SolariError && err.status === 404) continue;
-      return undefined;
+export async function fetchReplayUrl(solari: Solari, sessionId: string): Promise<ReplayLookup> {
+  try {
+    const { url } = await solari.sessions.getReplayUrl(sessionId);
+    return { url };
+  } catch (err) {
+    if (err instanceof SolariError) {
+      if (err.status === 404) {
+        return { pending: true, reason: "the recording has not finished uploading yet" };
+      }
+      return { reason: `${err.code ?? err.status}: ${err.message}` };
     }
+    return { reason: err instanceof Error ? err.message : String(err) };
   }
-  return undefined;
 }

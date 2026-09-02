@@ -44,6 +44,12 @@ export interface Verdict {
   summary: string;
   steps: number;
   replayUrl?: string;
+  /**
+   * The Solari session behind this run. The recording is uploaded minutes after
+   * the session is released, so the replay is fetched on demand from this id
+   * rather than holding the run open waiting for it.
+   */
+  sessionId?: string;
 }
 
 export type RunEvent =
@@ -75,6 +81,12 @@ export interface PerceivedElement {
   name: string;
   /** Present for links, so we can detect dead-end CTAs like wa.me or tel:. */
   href?: string;
+  /**
+   * The aria snapshot handle for this element, valid only for the snapshot it
+   * came from. Acting through it hits exactly the node we described to the model
+   * rather than re-guessing from role and name.
+   */
+  ref?: string;
 }
 
 export interface Perception {

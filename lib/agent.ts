@@ -5,7 +5,7 @@ import { ACTIONS } from "./actions";
 import { groqJson } from "./groq";
 import { type AgentPage, perceive, renderState } from "./perceive";
 import { grade, type Transcript } from "./grade";
-import { closeClient, getReplayUrl, launchBrowser, releaseSession } from "./solari";
+import { closeClient, launchBrowser, releaseSession } from "./solari";
 import type { ActionKind, Perception, RunEvent, StepAction } from "./types";
 
 export const MAX_STEPS = 10;
@@ -66,7 +66,7 @@ async function decide(
         { role: "system", content: SYSTEM },
         { role: "user", content: `TASK: ${goal}\n\n${renderState(p, stepsLeft)}${recent}` },
       ],
-      { maxTokens: 300, temperature: 0.1 },
+      { maxTokens: 800, temperature: 0.1 },
     );
     const parsed = DecisionSchema.safeParse(raw);
     if (parsed.success) return parsed.data;
@@ -91,6 +91,7 @@ function resolveTarget(p: Perception, target: Decision["target"]) {
 
 /** Minimal slice of the Playwright page the actuator needs. */
 interface ActPage extends AgentPage {
+  locator(selector: string): Locatorish;
   getByRole(role: string, opts: { name: string; exact?: boolean }): Locatorish;
   goBack(opts?: { timeout?: number }): Promise<unknown>;
   waitForLoadState(state: "domcontentloaded" | "load", opts?: { timeout?: number }): Promise<void>;
@@ -128,7 +129,13 @@ async function act(page: ActPage, p: Perception, d: Decision): Promise<string | 
   const el = resolveTarget(p, d.target);
   if (!el) return `no element numbered ${String(d.target)}`;
 
-  const locator = page.getByRole(el.role, { name: el.name, exact: false }).first();
+  // Prefer the snapshot handle: it points at the one node we showed the model.
+  // Falling back to role and name re-guesses, and on a page with three "Sign up"
+  // links the guess is wrong a third of the time.
+  const locator = el.ref
+    ? page.locator(`aria-ref=${el.ref}`).first()
+    : page.getByRole(el.role, { name: el.name, exact: false }).first();
+
   try {
     if (d.action === "type") {
       if (!d.value) return "type was chosen with nothing to type";
@@ -138,7 +145,8 @@ async function act(page: ActPage, p: Perception, d: Decision): Promise<string | 
       await settle();
     }
   } catch (err) {
-    return `${el.role} "${el.name}" would not accept a ${d.action}`;
+    const why = (err instanceof Error ? err.message : String(err)).split("\n")[0].slice(0, 120);
+    return `${el.role} "${el.name}" would not accept a ${d.action}: ${why}`;
   }
   return undefined;
 }
@@ -269,14 +277,24 @@ export async function runAudit(opts: RunOptions): Promise<void> {
       at: now(),
     });
   } finally {
-    // Order matters: release the session first, because the replay is only
+    // Order matters: release the session first, because the recording is only
     // uploaded once released, and close the client last, because nothing else
     // can talk to Solari afterwards and the process will not exit without it.
-    let replayUrl: string | undefined;
+    // What does NOT happen here is waiting for the replay: measured, that takes
+    // minutes, and the verdict is the payoff. The session id goes out instead
+    // and the client asks for the recording when it is ready.
+    let sessionId: string | undefined;
     if (launched) {
       await emit({ type: "status", message: "Releasing the browser", at: now() });
-      await releaseSession(launched.browser);
-      replayUrl = await getReplayUrl(launched.solari, launched.sessionId);
+      const releaseError = await releaseSession(launched.browser);
+      if (releaseError) {
+        await emit({
+          type: "status",
+          message: `The browser did not confirm release, so there may be no recording: ${releaseError}`,
+          at: now(),
+        });
+      }
+      sessionId = launched.sessionId;
       await closeClient(launched.solari);
     }
 
@@ -291,7 +309,7 @@ export async function runAudit(opts: RunOptions): Promise<void> {
       stealth: launched?.stealth ?? false,
     };
     const verdict = grade(transcript);
-    if (replayUrl) verdict.replayUrl = replayUrl;
+    if (sessionId) verdict.sessionId = sessionId;
 
     for (const b of verdict.blockers) {
       await emit({ type: "blocker", blocker: b.blocker, detail: b.detail, at: now() });

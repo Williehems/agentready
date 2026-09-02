@@ -1,4 +1,5 @@
 import type { Grade, Milestone, Verdict } from "@/lib/types";
+import { ReplayLink } from "./ReplayLink";
 
 const GRADE_CLASS: Record<Grade, string> = {
   A: "text-grade-a",
@@ -86,16 +87,9 @@ export function GradeCard({ verdict, url }: { verdict: Verdict; url: string }) {
         </div>
       </div>
 
-      {verdict.replayUrl ? (
+      {verdict.replayUrl || verdict.sessionId ? (
         <footer className="border-t border-line px-5 py-3">
-          <a
-            href={verdict.replayUrl}
-            target="_blank"
-            rel="noreferrer noopener"
-            className="text-[12px] text-muted underline decoration-line-strong underline-offset-4 hover:text-text"
-          >
-            Download the session replay (rrweb NDJSON)
-          </a>
+          <ReplayLink sessionId={verdict.sessionId} url={verdict.replayUrl} />
         </footer>
       ) : null}
     </section>
