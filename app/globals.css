@@ -1,0 +1,74 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+html,
+body {
+  background-color: #0a0b0d;
+  color: #f0f1f3;
+}
+
+body {
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Hero texture: AI_Bg_063 cropped to its glyph lattice, colour-drained and
+   veiled to 82% black, exported at 1920w WebP (14 KB). It reads as a field of
+   machine-readable characters, which is the product's whole thesis: the
+   machine does not see the picture you designed, it sees a character grid. */
+.hero-texture {
+  position: relative;
+  isolation: isolate;
+}
+
+.hero-texture::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -2;
+  background-image: url("/hero-lattice.webp");
+  background-size: cover;
+  background-position: 50% 30%;
+  /* Fade it out before it reaches the content below, so the texture never
+     competes with the run timeline or the verdict. */
+  mask-image: linear-gradient(to bottom, black 0%, black 55%, transparent 100%);
+  -webkit-mask-image: linear-gradient(to bottom, black 0%, black 55%, transparent 100%);
+}
+
+/* Grain, generated in the browser rather than shipped as a file. Kills the
+   smooth-render tell on the WebP without a network request. */
+.hero-texture::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  opacity: 0.5;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='0.12'/%3E%3C/svg%3E");
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Hairline rule used throughout as the only structural decoration. */
+.rule {
+  height: 1px;
+  background-color: #24272c;
+}
+
+::selection {
+  background: #f0f1f3;
+  color: #0a0b0d;
+}

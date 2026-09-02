@@ -1,0 +1,21 @@
+# deps
+node_modules/
+
+# next
+/.next/
+/out/
+next-env.d.ts
+
+# env: never commit real keys
+.env
+.env.local
+.env*.local
+
+# runtime artifacts
+/public/runs/
+tsconfig.tsbuildinfo
+*.log
+
+# os
+.DS_Store
+Thumbs.db
