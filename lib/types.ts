@@ -8,7 +8,7 @@
 export type ActionKind = "signup" | "purchase" | "integrate" | "book" | "contact";
 
 /** What the agent decided to do on a given turn. */
-export type StepAction = "click" | "type" | "scroll" | "back" | "done" | "give_up";
+export type StepAction = "click" | "type" | "select" | "scroll" | "back" | "done" | "give_up";
 
 /** Why a site failed a machine visitor. Attached to the verdict, not guessed by an LLM. */
 export type Blocker =
@@ -87,6 +87,12 @@ export interface PerceivedElement {
    * rather than re-guessing from role and name.
    */
   ref?: string;
+  /**
+   * The choices inside a dropdown, folded up from its option children. A native
+   * select's options are not separately clickable, so they are listed here as the
+   * values a "select" can ask for rather than offered as elements of their own.
+   */
+  options?: string[];
 }
 
 export interface Perception {

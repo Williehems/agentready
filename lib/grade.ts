@@ -177,7 +177,12 @@ export function grade(t: Transcript): Verdict {
 
   // Four consecutive perceptions of an unchanged page, with no success, is a
   // stuck loop. Unchanged means the whole page state, not just the address.
-  if (!t.declaredDone && t.perceptions.length >= 4) {
+  //
+  // Not claimed on a run we cut short ourselves. When our own actuator stops
+  // landing clicks the page cannot change, and reading that back as the site
+  // going in circles blames it for our failure. Seen live: three hung clicks in
+  // a row produced four identical perceptions of a working booking form.
+  if (!t.declaredDone && !t.abandoned && t.perceptions.length >= 4) {
     const tail = t.perceptions.slice(-4).map(fingerprint);
     if (new Set(tail).size === 1) {
       blockers.push({

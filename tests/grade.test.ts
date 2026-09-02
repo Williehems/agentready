@@ -234,6 +234,17 @@ describe("grade: the soft findings", () => {
     assert.ok(!blockers(transcript({ perceptions: flow, stepCount: 4 })).includes("loop"));
   });
 
+  it("does not call it a loop when our own actuator stopped landing clicks", () => {
+    // Seen live: three consecutive hung clicks left four identical perceptions of
+    // a booking form that was working fine. The page could not change because we
+    // never touched it, so charging the site with going in circles is our error
+    // dressed up as its finding.
+    const stuck = Array.from({ length: 4 }, () => page({ url: "https://example.com/book" }));
+    const ours = { perceptions: stuck, stepCount: 4, abandoned: "the browser stopped answering" };
+    assert.ok(!blockers(transcript(ours)).includes("loop"));
+    assert.ok(blockers(transcript({ ...ours, abandoned: undefined })).includes("loop"));
+  });
+
   it("flags nav-error when nothing was ever perceived", () => {
     const v = grade(transcript({ perceptions: [], stepCount: 0 }));
     assert.ok(v.blockers.some((b) => b.blocker === "nav-error"));

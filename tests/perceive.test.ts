@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { parseAriaSnapshot } from "../lib/perceive";
+import { parseAriaSnapshot, renderState } from "../lib/perceive";
+import type { Perception } from "../lib/types";
 
 /**
  * The two fixtures below are verbatim output from
@@ -46,6 +47,29 @@ const HN_LOGIN = `- generic [ref=f5e1]:
           - cell [ref=f5e24]:
             - textbox [ref=f5e25]
     - button "create account" [ref=f5e26]`;
+
+/**
+ * The step-2 panel of a real booking modal, verbatim from the same SDK against
+ * escape-house-spa.netlify.app. Note what the browser does and does not hand us:
+ * the combobox carries a ref, and not one of its seventeen options does. They are
+ * not nodes on the page, so pressing one can only ever time out.
+ */
+const BOOKING_STEP = `- dialog "Book a session" [ref=e315]:
+  - generic [ref=e325]:
+    - generic [ref=e328]:
+      - generic [ref=e329]:
+        - generic [ref=e330]: Preferred Date
+        - textbox "Preferred Date" [ref=e331]
+      - generic [ref=e332]:
+        - generic [ref=e333]: Preferred Time
+        - combobox "Preferred Time" [ref=e335]:
+          - option "Any time" [selected]
+          - option "10:00 AM"
+          - option "11:00 AM"
+          - option "12:00 PM"
+    - generic [ref=e337]:
+      - button "Back" [ref=e338] [cursor=pointer]
+      - button "Continue" [ref=e341] [cursor=pointer]`;
 
 describe("parseAriaSnapshot: a real minimal page", () => {
   const els = parseAriaSnapshot(EXAMPLE_COM);
@@ -147,5 +171,107 @@ describe("parseAriaSnapshot: the awkward cases", () => {
     const els = parseAriaSnapshot(many);
     assert.equal(els.length, 60);
     assert.equal(els[59].index, 60);
+  });
+});
+
+describe("parseAriaSnapshot: dropdowns", () => {
+  const els = parseAriaSnapshot(BOOKING_STEP);
+
+  it("offers the control and not its options", () => {
+    assert.deepEqual(
+      els.map((e) => `${e.role} ${e.name}`),
+      [
+        "textbox Preferred Date",
+        "combobox Preferred Time",
+        "button Back",
+        "button Continue",
+      ],
+    );
+  });
+
+  it("folds the choices onto the control, in the order the page listed them", () => {
+    const box = els.find((e) => e.role === "combobox")!;
+    assert.deepEqual(box.options, ["Any time", "10:00 AM", "11:00 AM", "12:00 PM"]);
+    assert.equal(box.ref, "e335", "and keeps the one handle that can be operated");
+  });
+
+  it("leaves other elements without an options list", () => {
+    assert.ok(els.filter((e) => e.role !== "combobox").every((e) => e.options === undefined));
+  });
+
+  it("keeps a listbox's options with the listbox", () => {
+    const els = parseAriaSnapshot(
+      `- listbox "Size" [ref=e1]:\n  - option "Small"\n  - option "Large"`,
+    );
+    assert.equal(els.length, 1);
+    assert.deepEqual(els[0].options, ["Small", "Large"]);
+  });
+
+  it("reaches past an optgroup to find the control", () => {
+    const els = parseAriaSnapshot(
+      `- combobox "Country" [ref=e1]:\n  - group "Africa":\n    - option "Nigeria"\n    - option "Ghana"`,
+    );
+    assert.deepEqual(els[0].options, ["Nigeria", "Ghana"]);
+  });
+
+  it("still offers an option that belongs to no dropdown, since those are real nodes", () => {
+    const els = parseAriaSnapshot(`- option "Standard plan" [ref=e1]\n- option "Pro plan" [ref=e2]`);
+    assert.deepEqual(
+      els.map((e) => e.name),
+      ["Standard plan", "Pro plan"],
+    );
+  });
+
+  it("shows at most twelve choices, so a country list cannot eat the prompt", () => {
+    const many = Array.from({ length: 40 }, (_, i) => `  - option "Item ${i}"`).join("\n");
+    const els = parseAriaSnapshot(`- combobox "Pick" [ref=e1]:\n${many}`);
+    assert.equal(els[0].options!.length, 12);
+    assert.equal(els[0].options![0], "Item 0");
+  });
+});
+
+describe("renderState", () => {
+  function perception(over: Partial<Perception> = {}): Perception {
+    return {
+      url: "https://example.com/book",
+      title: "Book",
+      elements: [],
+      text: "Choose a time.",
+      jsGated: false,
+      hasPrice: false,
+      ...over,
+    };
+  }
+
+  it("spells out a dropdown's choices, which is the only way select can name one", () => {
+    const state = renderState(
+      perception({
+        elements: [
+          {
+            index: 1,
+            role: "combobox",
+            name: "Preferred Time",
+            ref: "e335",
+            options: ["Any time", "10:00 AM"],
+          },
+        ],
+      }),
+      6,
+    );
+    assert.match(state, /1\. \[combobox\] Preferred Time {2}choices: Any time, 10:00 AM/);
+  });
+
+  it("keeps a link's destination visible so a dead end is obvious to the model too", () => {
+    const state = renderState(
+      perception({
+        elements: [{ index: 1, role: "link", name: "Chat", href: "https://wa.me/234801" }],
+      }),
+      6,
+    );
+    assert.match(state, /1\. \[link\] Chat {2}-> https:\/\/wa\.me\/234801/);
+  });
+
+  it("says the tree was empty rather than printing nothing at all", () => {
+    assert.match(renderState(perception(), 3), /the accessibility tree is empty/);
   });
 });

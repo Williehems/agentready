@@ -59,6 +59,19 @@ const INTERACTIVE = new Set([
  */
 const COLLAPSIBLE = new Set(["link", "button", "menuitem", "tab", "option"]);
 
+/**
+ * Controls whose options live inside them rather than on the page. A native
+ * select renders its options in an OS layer, so they are not clickable nodes and
+ * an agent that presses one waits out its timeout for nothing: measured on a real
+ * booking form, clicking `option "10:00 AM"` failed after 8s, every time, while
+ * `selectOption` on the parent took 36ms. Their labels are folded into the parent
+ * as choices instead.
+ */
+const SELECTABLE = new Set(["combobox", "listbox"]);
+
+/** How many choices to show per dropdown. A country list has 200 and needs none of them. */
+const MAX_OPTIONS = 12;
+
 const MAX_ELEMENTS = 60;
 const MAX_TEXT = 2800;
 /** Snapshots run a few KB. Past this the page is beyond what one prompt can hold. */
@@ -88,11 +101,34 @@ interface Node {
   ref?: string;
   href?: string;
   disabled: boolean;
+  options?: string[];
 }
 
 function flag(flags: string, name: string): string | undefined {
   const m = new RegExp(`\\[${name}(?:=([^\\]]*))?\\]`).exec(flags);
   return m ? (m[1] ?? "") : undefined;
+}
+
+/**
+ * The dropdown a bare option belongs to. Looks one level past its parent so an
+ * option wrapped in an optgroup still finds its control.
+ */
+function enclosingSelect(nodes: Node[], indent: number): Node | undefined {
+  let depth = indent;
+  for (let level = 0; level < 2; level++) {
+    let parent: Node | undefined;
+    for (let i = nodes.length - 1; i >= 0; i--) {
+      if (nodes[i].indent < depth) {
+        parent = nodes[i];
+        break;
+      }
+    }
+    if (!parent) return undefined;
+    if (SELECTABLE.has(parent.role)) return parent;
+    if (parent.indent === 0) return undefined;
+    depth = parent.indent;
+  }
+  return undefined;
 }
 
 /**
@@ -132,10 +168,23 @@ export function parseAriaSnapshot(snapshot: string): PerceivedElement[] {
     }
 
     const named = (quoted ?? "").replace(/\\(.)/g, "$1").trim();
+    const name = (named || (trailing ?? "").trim()).slice(0, 120);
+
+    // An option belonging to a dropdown is folded into it. Left on its own it is
+    // an element the model will press and cannot, and seventeen time slots eat a
+    // third of the element budget describing one control.
+    if (role === "option") {
+      const owner = enclosingSelect(nodes, indent);
+      if (owner) {
+        (owner.options ??= []).push(name);
+        continue;
+      }
+    }
+
     nodes.push({
       indent,
       role,
-      name: (named || (trailing ?? "").trim()).slice(0, 120),
+      name,
       ref: flag(flags, "ref"),
       disabled: flag(flags, "disabled") !== undefined,
     });
@@ -158,6 +207,7 @@ export function parseAriaSnapshot(snapshot: string): PerceivedElement[] {
     const el: PerceivedElement = { index: out.length + 1, role: n.role, name };
     if (n.ref) el.ref = n.ref;
     if (n.href) el.href = n.href;
+    if (n.options?.length) el.options = n.options.slice(0, MAX_OPTIONS);
     out.push(el);
   }
 
@@ -211,9 +261,7 @@ export async function perceive(page: AgentPage, timeoutMs = PERCEIVE_MS): Promis
 /** Render the perception as the compact numbered state the model sees. */
 export function renderState(p: Perception, stepsLeft: number, textBudget = MAX_TEXT): string {
   const els = p.elements.length
-    ? p.elements
-        .map((e) => `${e.index}. [${e.role}] ${e.name}${e.href ? `  -> ${e.href}` : ""}`)
-        .join("\n")
+    ? p.elements.map(describe).join("\n")
     : "(none: the accessibility tree is empty)";
 
   const prose = p.text.slice(0, Math.max(0, textBudget));
@@ -229,4 +277,11 @@ export function renderState(p: Perception, stepsLeft: number, textBudget = MAX_T
     "VISIBLE TEXT:",
     prose || "(none)",
   ].join("\n");
+}
+
+/** One line of the numbered list. Choices are spelled out so a select can name one. */
+function describe(e: PerceivedElement): string {
+  const target = e.href ? `  -> ${e.href}` : "";
+  const choices = e.options?.length ? `  choices: ${e.options.join(", ")}` : "";
+  return `${e.index}. [${e.role}] ${e.name}${target}${choices}`;
 }

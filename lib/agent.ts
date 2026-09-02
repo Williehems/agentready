@@ -2,7 +2,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
 import { ACTIONS } from "./actions";
-import { Deadline, withTimeout } from "./deadline";
+import { Deadline, TimeoutError, withTimeout } from "./deadline";
 import { groqJson } from "./groq";
 import { type AgentPage, perceive, renderState } from "./perceive";
 import { grade, type Transcript } from "./grade";
@@ -27,9 +27,19 @@ const ACT_MS = 25_000;
 const DECIDE_MS = 45_000;
 /** Handing the slot back. Long enough to be real, short enough to still report. */
 const RELEASE_MS = 30_000;
+/**
+ * How many actions in a row may blow past their own ceiling before we stop.
+ *
+ * An action that ignores the 8s timeout Playwright was given is not the element
+ * refusing, it is the browser no longer answering, and once that starts it does
+ * not stop. Measured on a live run: five consecutive 25s hangs burned every
+ * remaining step and then produced form-stall and loop against a site whose form
+ * was fine. Two could be a heavy page. Three is the browser.
+ */
+const STALL_LIMIT = 3;
 
 const DecisionSchema = z.object({
-  action: z.enum(["click", "type", "scroll", "back", "done", "give_up"]),
+  action: z.enum(["click", "type", "select", "scroll", "back", "done", "give_up"]),
   target: z.union([z.number(), z.string()]).optional(),
   value: z.string().optional(),
   reasoning: z.string().default(""),
@@ -90,11 +100,14 @@ You will be given the page state as a numbered list of interactive elements plus
 visible text. Choose exactly ONE next action.
 
 Respond with JSON only, in this shape:
-{"action":"click"|"type"|"scroll"|"back"|"done"|"give_up","target":<element number>,"value":"<text>","reasoning":"<one short first-person sentence>"}
+{"action":"click"|"type"|"select"|"scroll"|"back"|"done"|"give_up","target":<element number>,"value":"<text>","reasoning":"<one short first-person sentence>"}
 
 Rules:
 - Address elements only by their number from the list. Never invent a number.
 - "type" fills one field. Follow it with a separate "click" on the submit control.
+- An element listed with "choices:" is a dropdown. Use "select" with "value" set to
+  one of those choices exactly as written. Clicking a dropdown or its options does
+  nothing: "select" is the only way to set one.
 - Use realistic placeholder details when a form needs them: name "Alex Morgan",
   email "alex.morgan.test@example.com", phone "+1 415 555 0132", company "Morgan Labs".
 - A date field wants a date a few days from today, never one in the past. Match the
@@ -176,6 +189,10 @@ interface Locatorish {
   first(): Locatorish;
   click(opts?: { timeout?: number }): Promise<void>;
   fill(value: string, opts?: { timeout?: number }): Promise<void>;
+  selectOption(
+    value: string | { label: string },
+    opts?: { timeout?: number },
+  ): Promise<string[]>;
 }
 
 /** Execute one decision. Returns an error string when the element would not budge. */
@@ -210,6 +227,16 @@ async function act(page: ActPage, p: Perception, d: Decision): Promise<string | 
     if (d.action === "type") {
       if (!d.value) return "type was chosen with nothing to type";
       await locator.fill(d.value, { timeout: 8000 });
+    } else if (d.action === "select") {
+      if (!d.value) return "select was chosen with no choice named";
+      // By label first, because the label is what the model was shown. Then by
+      // value, for the selects whose visible text and underlying value differ.
+      // Both are short: a dropdown that answers at all answers in milliseconds.
+      try {
+        await locator.selectOption({ label: d.value }, { timeout: 5000 });
+      } catch {
+        await locator.selectOption(d.value, { timeout: 5000 });
+      }
     } else {
       await locator.click({ timeout: 8000 });
       await settle();
@@ -244,6 +271,8 @@ export async function runAudit(opts: RunOptions): Promise<void> {
   let declaredDone = false;
   let gaveUp = false;
   let stepCount = 0;
+  /** Consecutive actions that hung past their own ceiling. */
+  let stalls = 0;
   /** Set when the run ended for a reason of ours rather than the site's. */
   let abandoned: string | undefined;
   let launched: Awaited<ReturnType<typeof launchBrowser>> | undefined;
@@ -361,10 +390,19 @@ export async function runAudit(opts: RunOptions): Promise<void> {
       // Bounded as a whole, not per call: the settle and the scroll inside it take
       // no timeout of their own, and a dead CDP socket makes every one of them
       // wait forever.
-      const error = await withTimeout(act(page, p, d), clock.cap(ACT_MS), "the action").catch(
-        (err: unknown) => (err instanceof Error ? err.message : String(err)),
-      );
-      if (error) failures.push(error);
+      let error: string | undefined;
+      let wedged = false;
+      try {
+        error = await withTimeout(act(page, p, d), clock.cap(ACT_MS), "the action");
+      } catch (err) {
+        error = err instanceof Error ? err.message : String(err);
+        // Our ceiling fired, not Playwright's. The element did not refuse: the
+        // browser never answered, which is our problem to report and not the
+        // site's to be graded on.
+        wedged = err instanceof TimeoutError;
+      }
+      if (error && !wedged) failures.push(error);
+      stalls = wedged ? stalls + 1 : 0;
       history.push(
         `- ${d.action}${el ? ` "${el.name}"` : ""}${error ? ` FAILED: ${error}` : " (ok)"}`,
       );
@@ -383,6 +421,16 @@ export async function runAudit(opts: RunOptions): Promise<void> {
         elementCount: p.elements.length,
         at: now(),
       });
+
+      if (stalls >= STALL_LIMIT) {
+        abandoned = `the browser stopped answering: ${stalls} actions in a row hung past their own timeout`;
+        await emit({
+          type: "status",
+          message: `Stopping after ${stepCount} steps: ${abandoned}`,
+          at: now(),
+        });
+        break;
+      }
     }
   } catch (err) {
     await emit({
