@@ -97,13 +97,19 @@ function allLinksAreDeadEnds(t: Transcript): boolean {
  * working flow a stuck loop: seen live on a real spa site, where the element
  * count went 37 to 51 while the URL stood still. So a loop is the page not
  * changing, and this is what "not changing" means.
+ *
+ * What the fields hold counts as part of it. Filling in a form is progress even
+ * though it moves nothing else on the page, and a run that types a name, a phone
+ * number and a note would otherwise look identical at every step and earn a loop
+ * blocker for working correctly. Retyping the same value into the same field
+ * still leaves this string unchanged, which is the case the blocker is for.
  */
 function fingerprint(p: Perception): string {
   return [
     p.url,
     p.title,
     p.elements.length,
-    p.elements.map((e) => `${e.role}:${e.name}`).join("|"),
+    p.elements.map((e) => `${e.role}:${e.name}:${e.value ?? ""}`).join("|"),
   ].join("~");
 }
 

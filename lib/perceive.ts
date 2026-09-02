@@ -69,6 +69,28 @@ const COLLAPSIBLE = new Set(["link", "button", "menuitem", "tab", "option"]);
  */
 const SELECTABLE = new Set(["combobox", "listbox"]);
 
+/**
+ * Roles whose current contents are part of the page state.
+ *
+ * A filled field and an empty one are the same three words to a model shown only
+ * a role and a name, and a model that cannot see what it typed types it again.
+ * Measured on a live run: the same name went into the same box on steps 7, 8, 9
+ * and 10, every one reported ok, and the run ended on a loop blocker.
+ */
+const VALUED = new Set([
+  "textbox",
+  "searchbox",
+  "combobox",
+  "spinbutton",
+  "slider",
+  "checkbox",
+  "radio",
+  "switch",
+]);
+
+/** How much of a value to carry. Enough to recognise it, not enough to eat the budget. */
+const MAX_VALUE = 60;
+
 /** How many choices to show per dropdown. A country list has 200 and needs none of them. */
 const MAX_OPTIONS = 12;
 
@@ -163,11 +185,29 @@ interface Node {
   href?: string;
   disabled: boolean;
   options?: string[];
+  value?: string;
 }
 
 function flag(flags: string, name: string): string | undefined {
   const m = new RegExp(`\\[${name}(?:=([^\\]]*))?\\]`).exec(flags);
   return m ? (m[1] ?? "") : undefined;
+}
+
+/** The node a child line hangs off: the nearest one above it that is less indented. */
+function parentOf(nodes: Node[], indent: number): Node | undefined {
+  for (let i = nodes.length - 1; i >= 0; i--) {
+    if (nodes[i].indent < indent) return nodes[i];
+  }
+  return undefined;
+}
+
+/**
+ * A snapshot value with the quotes Playwright puts around non-text ones removed,
+ * so `spinbutton "Guests": "3"` reports 3 rather than `"3"`.
+ */
+function unquote(s: string): string {
+  const m = /^"((?:[^"\\]|\\.)*)"$/.exec(s);
+  return (m ? m[1].replace(/\\(.)/g, "$1") : s).slice(0, MAX_VALUE);
 }
 
 /**
@@ -255,17 +295,41 @@ export function parseAriaSnapshot(snapshot: string, modalOpen = false): Perceive
     // A link's target arrives as its own child line: "- /url: /pricing". Attach
     // it to the nearest node above that is shallower, which is the link itself.
     if (role === "/url") {
-      for (let i = nodes.length - 1; i >= 0; i--) {
-        if (nodes[i].indent < indent) {
-          nodes[i].href = (trailing ?? "").trim();
-          break;
-        }
-      }
+      const owner = parentOf(nodes, indent);
+      if (owner) owner.href = (trailing ?? "").trim();
       continue;
     }
 
     const named = (quoted ?? "").replace(/\\(.)/g, "$1").trim();
-    const name = (named || (trailing ?? "").trim()).slice(0, 120);
+    const tail = (trailing ?? "").trim();
+    const valued = VALUED.has(role);
+
+    // A nameless field's tail is what it holds, not what it is called: reading it
+    // as a name shows the model `[textbox] SPA10`, a box that appears to be named
+    // after its own contents, and hides that it is already filled.
+    const name = (named || (valued ? "" : tail)).slice(0, 120);
+
+    /**
+     * A field's contents arrive in one of two shapes, and which one depends only
+     * on whether the input carries a placeholder:
+     *
+     *   - textbox "Preferred Date" [ref=e4]: 2026-09-07
+     *   - textbox "Your Name" [ref=e341]:
+     *     - /placeholder: Full name
+     *     - text: Alex Morgan
+     *
+     * Both verified against Playwright's renderer and against the live booking
+     * form that caused the loop. Reading only the inline one reports every
+     * placeholder-bearing field as empty, which is most of a real form.
+     */
+    if (role === "text" && tail) {
+      const owner = parentOf(nodes, indent);
+      if (owner && VALUED.has(owner.role) && owner.value === undefined) {
+        owner.value = unquote(tail);
+      }
+      // Still recorded: a label above a nameless control is found by looking back
+      // over these, so consuming the line would cost that control its name.
+    }
 
     // An option belonging to a dropdown is folded into it. Left on its own it is
     // an element the model will press and cannot, and seventeen time slots eat a
@@ -274,9 +338,12 @@ export function parseAriaSnapshot(snapshot: string, modalOpen = false): Perceive
       const owner = enclosingSelect(nodes, indent);
       if (owner) {
         (owner.options ??= []).push(name);
+        if (flag(flags, "selected") !== undefined) owner.value = name.slice(0, MAX_VALUE);
         continue;
       }
     }
+
+    const checked = valued ? flag(flags, "checked") : undefined;
 
     nodes.push({
       indent,
@@ -284,6 +351,9 @@ export function parseAriaSnapshot(snapshot: string, modalOpen = false): Perceive
       name,
       ref: flag(flags, "ref"),
       disabled: flag(flags, "disabled") !== undefined,
+      // A tick has no text, so its state is the flag. Unticked carries no flag at
+      // all, which is why an absent value has to mean empty rather than unknown.
+      value: checked !== undefined ? checked || "checked" : valued && tail ? unquote(tail) : undefined,
     });
   }
 
@@ -306,6 +376,7 @@ export function parseAriaSnapshot(snapshot: string, modalOpen = false): Perceive
     if (n.ref) el.ref = n.ref;
     if (n.href) el.href = n.href;
     if (n.options?.length) el.options = n.options.slice(0, MAX_OPTIONS);
+    if (n.value) el.value = n.value;
     out.push(el);
   }
 
@@ -380,9 +451,14 @@ export function renderState(p: Perception, stepsLeft: number, textBudget = MAX_T
   ].join("\n");
 }
 
-/** One line of the numbered list. Choices are spelled out so a select can name one. */
+/**
+ * One line of the numbered list. Choices are spelled out so a select can name
+ * one, and contents are spelled out so the model can see what it has already
+ * filled in rather than filling it again.
+ */
 function describe(e: PerceivedElement): string {
   const target = e.href ? `  -> ${e.href}` : "";
+  const holds = e.value ? `  = "${e.value}"` : "";
   const choices = e.options?.length ? `  choices: ${e.options.join(", ")}` : "";
-  return `${e.index}. [${e.role}] ${e.name}${target}${choices}`;
+  return `${e.index}. [${e.role}] ${e.name}${holds}${target}${choices}`;
 }

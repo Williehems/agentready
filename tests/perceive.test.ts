@@ -230,6 +230,100 @@ describe("parseAriaSnapshot: dropdowns", () => {
   });
 });
 
+describe("parseAriaSnapshot: what a control already holds", () => {
+  /**
+   * Step 3 of the same live booking modal with two fields typed into, verbatim
+   * from `ariaSnapshot({ mode: "ai" })`, de-indented to sit at the root.
+   *
+   * This is the shape that cost a run. A field with a placeholder does not print
+   * its contents inline: the placeholder and the value arrive as indented child
+   * lines, and a parser that reads only the inline tail reports every one of
+   * these as empty. The model, shown an empty box it had just filled, filled it
+   * again on four consecutive steps and earned a loop blocker for it.
+   */
+  const FILLED_FORM = `- generic [ref=e371]:
+  - generic [ref=e372]:
+    - generic [ref=e373]: Your Name *
+    - textbox "Your Name" [ref=e374]:
+      - /placeholder: Full name
+      - text: Alex Morgan
+  - generic [ref=e375]:
+    - generic [ref=e376]: Phone Number
+    - textbox "Phone Number" [active] [ref=e377]:
+      - /placeholder: +234 800 000 0000
+      - text: +1 415 555 0132
+- generic [ref=e378]:
+  - generic [ref=e379]: Special Requests (optional)
+  - textbox "Special Requests (optional)" [ref=e380]:
+    - /placeholder: Any allergies, preferences or special requests...
+- button "Send booking via WhatsApp" [ref=e381] [cursor=pointer]:
+  - generic [ref=e382]:
+    - img [ref=e383]
+    - text: Send Booking via WhatsApp`;
+
+  const els = parseAriaSnapshot(FILLED_FORM);
+  const byName = (name: string) => els.find((e) => e.name === name)!;
+
+  it("reads a value that arrives as a child line, under its placeholder", () => {
+    assert.equal(byName("Your Name").value, "Alex Morgan");
+    assert.equal(byName("Phone Number").value, "+1 415 555 0132");
+  });
+
+  it("leaves an untouched field empty rather than reporting its placeholder", () => {
+    assert.equal(byName("Special Requests (optional)").value, undefined);
+  });
+
+  it("reads a value that arrives inline, which is what a field with no placeholder does", () => {
+    const els = parseAriaSnapshot(`- textbox "Preferred Date" [active] [ref=e331]: 2026-09-07`);
+    assert.equal(els[0].value, "2026-09-07");
+    assert.equal(els[0].name, "Preferred Date", "and the name is still the name");
+  });
+
+  it("does not let one field's contents become the next field's name", () => {
+    assert.deepEqual(
+      els.map((e) => e.name),
+      ["Your Name", "Phone Number", "Special Requests (optional)", "Send booking via WhatsApp"],
+    );
+  });
+
+  it("keeps a button's own text off it, since a button holds nothing", () => {
+    assert.equal(byName("Send booking via WhatsApp").value, undefined);
+  });
+
+  it("takes a nameless field's tail as its contents and its name from the label above", () => {
+    const els = parseAriaSnapshot(`- text: Coupon code\n- textbox [ref=e9]: SPA10`);
+    assert.equal(els[0].name, "Coupon code");
+    assert.equal(els[0].value, "SPA10");
+  });
+
+  it("unquotes the value Playwright quotes on a number field", () => {
+    assert.equal(parseAriaSnapshot(`- spinbutton "Guests" [ref=e7]: "3"`)[0].value, "3");
+  });
+
+  it("reports the chosen option as the dropdown's value", () => {
+    const els = parseAriaSnapshot(
+      `- combobox "Preferred Time" [ref=e335]:\n  - option "Any time"\n  - option "10:00 AM" [selected]`,
+    );
+    assert.equal(els[0].value, "10:00 AM");
+    assert.deepEqual(els[0].options, ["Any time", "10:00 AM"], "and every choice is still offered");
+  });
+
+  it("reports an untouched dropdown as holding whatever it defaults to", () => {
+    assert.equal(parseAriaSnapshot(BOOKING_STEP).find((e) => e.role === "combobox")!.value, "Any time");
+  });
+
+  it("reports a ticked box as checked and an unticked one as holding nothing", () => {
+    const els = parseAriaSnapshot(`- checkbox "Terms" [checked] [ref=e1]\n- checkbox "Offers" [ref=e2]`);
+    assert.equal(els[0].value, "checked");
+    assert.equal(els[1].value, undefined);
+  });
+
+  it("keeps a long value short enough not to eat the prompt", () => {
+    const els = parseAriaSnapshot(`- textbox "Notes" [ref=e1]: ${"x".repeat(200)}`);
+    assert.equal(els[0].value!.length, 60);
+  });
+});
+
 describe("parseAriaSnapshot: an open modal", () => {
   /**
    * The page behind the booking modal is still in the tree. A real visitor cannot
@@ -334,8 +428,26 @@ describe("renderState", () => {
     assert.match(state, /1\. \[combobox\] Preferred Time {2}choices: Any time, 10:00 AM/);
   });
 
-  it("keeps a link's destination visible so a dead end is obvious to the model too", () => {
+  /**
+   * The line the model reads to know it has already typed something. Without it,
+   * a filled field and an empty one are the same three words, and the model fills
+   * it again: four consecutive identical steps on a live run.
+   */
+  it("shows what a field already holds", () => {
     const state = renderState(
+      perception({
+        elements: [
+          { index: 1, role: "textbox", name: "Your Name", ref: "e374", value: "Alex Morgan" },
+          { index: 2, role: "textbox", name: "Phone Number", ref: "e377" },
+        ],
+      }),
+      6,
+    );
+    assert.match(state, /1\. \[textbox\] Your Name {2}= "Alex Morgan"/);
+    assert.match(state, /2\. \[textbox\] Phone Number$/m, "and an empty field says nothing");
+  });
+
+  it("keeps a link's destination visible so a dead end is obvious to the model too", () => {    const state = renderState(
       perception({
         elements: [{ index: 1, role: "link", name: "Chat", href: "https://wa.me/234801" }],
       }),

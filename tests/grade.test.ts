@@ -234,6 +234,34 @@ describe("grade: the soft findings", () => {
     assert.ok(!blockers(transcript({ perceptions: flow, stepCount: 4 })).includes("loop"));
   });
 
+  it("does not call filling in a form a loop, and still catches retyping one field", () => {
+    // A form filled one field at a time: same URL, same elements, same count, and
+    // real progress on every step. Judging that by anything but the contents calls
+    // a working checkout a stuck loop.
+    const form = (name?: string, phone?: string, notes?: string) =>
+      page({
+        url: "https://example.com/book",
+        elements: [
+          { index: 1, role: "textbox", name: "Your Name", ...(name ? { value: name } : {}) },
+          { index: 2, role: "textbox", name: "Phone Number", ...(phone ? { value: phone } : {}) },
+          { index: 3, role: "textbox", name: "Notes", ...(notes ? { value: notes } : {}) },
+          el(4, "button", "Send booking"),
+        ],
+      });
+
+    const filling = [
+      form(),
+      form("Alex Morgan"),
+      form("Alex Morgan", "+1 415 555 0132"),
+      form("Alex Morgan", "+1 415 555 0132", "no nuts"),
+    ];
+    assert.ok(!blockers(transcript({ perceptions: filling, stepCount: 4 })).includes("loop"));
+
+    // And the run this came from: the same name into the same box, four times.
+    const retyping = Array.from({ length: 4 }, () => form("Alex Morgan"));
+    assert.ok(blockers(transcript({ perceptions: retyping, stepCount: 4 })).includes("loop"));
+  });
+
   it("does not call it a loop when our own actuator stopped landing clicks", () => {
     // Seen live: three consecutive hung clicks left four identical perceptions of
     // a booking form that was working fine. The page could not change because we

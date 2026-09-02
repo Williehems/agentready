@@ -108,6 +108,8 @@ Rules:
 - An element listed with "choices:" is a dropdown. Use "select" with "value" set to
   one of those choices exactly as written. Clicking a dropdown or its options does
   nothing: "select" is the only way to set one.
+- An element listed with = "something" already holds that value. It is filled in.
+  Move on to the next empty field or to the submit control; do not fill it again.
 - Use realistic placeholder details when a form needs them: name "Alex Morgan",
   email "alex.morgan.test@example.com", phone "+1 415 555 0132", company "Morgan Labs".
 - A date field wants a date a few days from today, never one in the past. Match the

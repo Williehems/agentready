@@ -99,6 +99,16 @@ export interface PerceivedElement {
    * values a "select" can ask for rather than offered as elements of their own.
    */
   options?: string[];
+  /**
+   * What this control currently holds: the text in a field, the chosen option of
+   * a dropdown, "checked" on a box that is ticked. Absent when it holds nothing.
+   *
+   * Without this a filled field and an empty one are the same three words to the
+   * model, and a model that cannot see what it typed types it again. Measured on
+   * a live run: the same name went into the same box on four consecutive steps,
+   * every one reported ok, and the run ended on a loop blocker.
+   */
+  value?: string;
 }
 
 export interface Perception {
