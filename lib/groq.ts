@@ -46,8 +46,13 @@ const TIMEOUT_MS = 45_000;
  *
  * Groq says exactly how long to wait, so wait that long and ask again. Anything
  * past a short wait is not worth holding a browser session open for.
+ *
+ * Four attempts rather than two, because the waits it asks for near the window
+ * roll are about a second and the spare-budget guard below is what actually stops
+ * us. Measured: a docs-site run died at step 7 with 163s of run budget left,
+ * having spent its one retry on a 429 that asked for 1s.
  */
-const RETRY_LIMIT = 2;
+const RETRY_LIMIT = 4;
 const MAX_BACKOFF_MS = 20_000;
 
 /**
@@ -108,12 +113,14 @@ export interface ChatOptions {
 
 /** A refusal that is about our account, not about the caller's request. */
 export class RateLimitedError extends Error {
-  constructor(readonly waitMs: number | undefined) {
-    super(
-      waitMs
-        ? `Groq rate limit reached, and the wait it asked for (${Math.round(waitMs / 1000)}s) is longer than this run can spare`
-        : "Groq rate limit reached",
-    );
+  /**
+   * `why` says which of the three refusals this was, because they call for
+   * different answers and a run that reports the wrong one sends its reader after
+   * the wrong fix. Measured: a run stopped after using up its retries and said the
+   * 1s wait was longer than it could spare, with 163s of budget left.
+   */
+  constructor(readonly waitMs: number | undefined, why?: string) {
+    super(why ? `Groq rate limit reached: ${why}` : "Groq rate limit reached");
     this.name = "RateLimitedError";
   }
 }
@@ -159,12 +166,16 @@ export async function groqChat(
         const text = await res.text();
         const waitMs = retryAfterMs(text, res.headers);
         const spare = timeoutMs - (Date.now() - started);
-        const worthWaiting =
-          rateAttempt < RETRY_LIMIT &&
-          waitMs !== undefined &&
-          waitMs <= MAX_BACKOFF_MS &&
-          waitMs + 2000 < spare;
-        if (!worthWaiting) throw new RateLimitedError(waitMs);
+        if (rateAttempt >= RETRY_LIMIT) {
+          throw new RateLimitedError(waitMs, `it refused ${rateAttempt} attempts in a row`);
+        }
+        if (waitMs === undefined) throw new RateLimitedError(waitMs, "it did not say how long to wait");
+        if (waitMs > MAX_BACKOFF_MS || waitMs + 2000 >= spare) {
+          throw new RateLimitedError(
+            waitMs,
+            `the wait it asked for (${Math.round(waitMs / 1000)}s) is longer than this run can spare`,
+          );
+        }
         rateAttempt++;
         await sleep(waitMs + 300);
         continue;
