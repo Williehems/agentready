@@ -1,0 +1,165 @@
+"use client";
+
+import { useEffect, useRef, useState } from "react";
+import { ACTION_LIST } from "@/lib/actions";
+import type { ActionKind } from "@/lib/types";
+
+/**
+ * The dock: the only control on the audit page, in two floating pieces.
+ *
+ * The pill takes a URL and nothing else. The round button next to it asks the
+ * one question a URL cannot answer, which action the site exists for, and it
+ * asks it late: the menu opens on click and picking an entry is what starts the
+ * run. So there is no third click, and nothing to read before typing.
+ */
+
+/** What the agent will actually attempt, in the visitor's words rather than the model's. */
+const HINT: Record<ActionKind, string> = {
+  signup: "reach the account form and fill in what it can",
+  purchase: "reach checkout on the cheapest thing you sell",
+  integrate: "find the docs, a copyable example, and a key",
+  book: "pick a slot, fill the details, press send",
+  contact: "find a human and get as far as composing",
+};
+
+export function AuditDock({
+  url,
+  onUrlChange,
+  onRun,
+  running,
+  lastAction,
+}: {
+  url: string;
+  onUrlChange: (next: string) => void;
+  onRun: (action: ActionKind) => void;
+  running: boolean;
+  lastAction?: ActionKind;
+}) {
+  const [open, setOpen] = useState(false);
+  const panel = useRef<HTMLDivElement | null>(null);
+  const trigger = useRef<HTMLButtonElement | null>(null);
+  const first = useRef<HTMLButtonElement | null>(null);
+
+  const ready = url.trim().length > 0 && !running;
+
+  // Closing has to answer to the page, not just to the button: a click anywhere
+  // else and Escape both mean the same thing, and Escape puts focus back where
+  // it came from so the keyboard is not left stranded in a closed panel.
+  useEffect(() => {
+    if (!open) return;
+
+    const outside = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if (panel.current?.contains(t) || trigger.current?.contains(t)) return;
+      setOpen(false);
+    };
+    const key = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      setOpen(false);
+      trigger.current?.focus();
+    };
+
+    document.addEventListener("mousedown", outside);
+    document.addEventListener("keydown", key);
+    first.current?.focus();
+    return () => {
+      document.removeEventListener("mousedown", outside);
+      document.removeEventListener("keydown", key);
+    };
+  }, [open]);
+
+  // A run in flight closes the menu it was started from.
+  useEffect(() => {
+    if (running) setOpen(false);
+  }, [running]);
+
+  const choose = (action: ActionKind) => {
+    setOpen(false);
+    onRun(action);
+  };
+
+  return (
+    <div className="pointer-events-none fixed inset-x-0 bottom-0 z-30 pb-6 pt-10 sm:pb-8">
+      <div className="dock-veil" aria-hidden />
+
+      <div className="pointer-events-auto relative mx-auto flex w-full max-w-shell items-end gap-3 px-4 sm:gap-4 sm:px-6">
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            // Enter is a request to run, and the action is still unanswered, so
+            // it opens the menu rather than guessing which one was meant.
+            if (ready) setOpen(true);
+          }}
+          className="dock-pill flex min-w-0 flex-1 items-center"
+        >
+          <span className="hidden select-none pl-5 text-[13px] text-dim sm:block">https://</span>
+          <input
+            value={url}
+            onChange={(e) => onUrlChange(e.target.value)}
+            placeholder="your-site.com"
+            inputMode="url"
+            autoCapitalize="off"
+            autoCorrect="off"
+            spellCheck={false}
+            disabled={running}
+            aria-label="Site to audit"
+            className="min-w-0 flex-1 bg-transparent px-5 py-4 text-[13px] text-text placeholder:text-dim focus:outline-none disabled:opacity-50 sm:pl-1.5"
+          />
+        </form>
+
+        {open ? (
+          <div
+            ref={panel}
+            role="menu"
+            aria-label="What should the agent try to do?"
+            className="menu-card animate-rise absolute bottom-full right-4 mb-3 w-[min(22rem,calc(100%-2rem))] sm:right-6"
+          >
+            <p className="px-4 pb-2 pt-3.5 text-[10px] uppercase tracking-[0.18em] text-dim">
+              What is this audit for?
+            </p>
+            {ACTION_LIST.map((a, i) => (
+              <button
+                key={a.id}
+                ref={i === 0 ? first : undefined}
+                type="button"
+                role="menuitem"
+                onClick={() => choose(a.id)}
+                className="group flex w-full items-start gap-3 px-4 py-2.5 text-left transition-colors hover:bg-raised focus:bg-raised focus:outline-none"
+              >
+                <span
+                  className={`mt-[5px] h-2 w-2 shrink-0 rounded-full border ${
+                    lastAction === a.id ? "border-grade-a bg-grade-a" : "border-line-strong"
+                  }`}
+                  aria-hidden
+                />
+                <span className="min-w-0">
+                  <span className="block text-[13px] text-text">{a.label}</span>
+                  <span className="block text-[11px] leading-snug text-dim">{HINT[a.id]}</span>
+                </span>
+              </button>
+            ))}
+          </div>
+        ) : null}
+
+        <button
+          ref={trigger}
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          disabled={!ready}
+          aria-haspopup="menu"
+          aria-expanded={open}
+          className="dock-orb shrink-0"
+        >
+          {running ? (
+            <span className="flex items-center gap-2">
+              <span className="inline-block h-1.5 w-1.5 animate-pulse-dot rounded-full bg-ink" />
+              <span className="hidden sm:inline">running</span>
+            </span>
+          ) : (
+            "audit"
+          )}
+        </button>
+      </div>
+    </div>
+  );
+}

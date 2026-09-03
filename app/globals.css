@@ -17,39 +17,49 @@ body {
   text-rendering: optimizeLegibility;
 }
 
-/* Hero texture: AI_Bg_063 cropped to its glyph lattice, colour-drained and
-   veiled to 82% black, exported at 1920w WebP (14 KB). It reads as a field of
-   machine-readable characters, which is the product's whole thesis: the
-   machine does not see the picture you designed, it sees a character grid. */
-.hero-texture {
+/* The landing page picture, carrying the whole first impression.
+
+   AI_Bg_071 from the backgrounds library, cropped to 16:9 off the top, mirrored
+   so its ember falls on the right, 1800w WebP at q68 (220 KB). Mirrored on
+   purpose: the glow was under the headline and the call to action, and a white
+   pill on a hot orange field is the one place on this page where the type would
+   have had to fight the image.
+
+   It is a framed panel rather than a full-bleed wash. The source is almost black,
+   so behind the whole page it disappears under any scrim heavy enough to keep the
+   type crisp; inside an edge it reads as a chosen image. The left side is faded
+   into the page so the panel joins the layout instead of sitting on top of it. */
+.shot {
   position: relative;
   isolation: isolate;
+  overflow: hidden;
+  border-radius: 26px;
+  border: 1px solid #24272c;
 }
 
-.hero-texture::before {
+.shot::before {
   content: "";
   position: absolute;
   inset: 0;
-  z-index: -2;
-  background-image: url("/hero-lattice.webp");
+  /* Anchored low and right, where the ember lives. */
+  background-image: url("/landing.webp");
   background-size: cover;
-  background-position: 50% 30%;
-  /* Fade it out before it reaches the content below, so the texture never
-     competes with the run timeline or the verdict. */
-  mask-image: linear-gradient(to bottom, black 0%, black 55%, transparent 100%);
-  -webkit-mask-image: linear-gradient(to bottom, black 0%, black 55%, transparent 100%);
+  background-position: 68% 82%;
 }
 
-/* Grain, generated in the browser rather than shipped as a file. Kills the
-   smooth-render tell on the WebP without a network request. */
-.hero-texture::after {
+.shot::after {
   content: "";
   position: absolute;
   inset: 0;
-  z-index: -1;
   pointer-events: none;
-  opacity: 0.5;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='0.12'/%3E%3C/svg%3E");
+  background:
+    linear-gradient(
+      to right,
+      rgba(10, 11, 13, 0.72) 0%,
+      rgba(10, 11, 13, 0.24) 30%,
+      rgba(10, 11, 13, 0) 64%
+    ),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='0.1'/%3E%3C/svg%3E");
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -66,6 +76,123 @@ body {
 .rule {
   height: 1px;
   background-color: #24272c;
+}
+
+/* ---------------------------------------------------------------------------
+   The audit page: a conversation with a dock floating over it.
+   --------------------------------------------------------------------------- */
+
+/* The same picture as the landing page, dimmed and softened until it is a
+   temperature rather than a subject. The screenshots the agent returns are the
+   only sharp images allowed on this page, so nothing behind them competes. */
+.audit-texture {
+  position: relative;
+  isolation: isolate;
+}
+
+.audit-texture::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -2;
+  background-image: url("/landing.webp");
+  background-size: cover;
+  background-position: 50% 45%;
+  opacity: 0.2;
+  filter: saturate(0.65) blur(2px);
+}
+
+.audit-texture::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  opacity: 0.4;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='0.12'/%3E%3C/svg%3E");
+}
+
+/* Fades the stream out under the dock instead of letting text collide with it. */
+.dock-veil {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(
+    to top,
+    #0a0b0d 16%,
+    rgba(10, 11, 13, 0.85) 52%,
+    rgba(10, 11, 13, 0) 100%
+  );
+}
+
+.dock-pill {
+  min-height: 3.5rem;
+  border-radius: 9999px;
+  border: 1px solid #3a3d42;
+  background-color: rgba(20, 22, 26, 0.78);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  box-shadow: 0 18px 40px -18px rgba(0, 0, 0, 0.9);
+  transition: border-color 140ms ease;
+}
+
+.dock-pill:focus-within {
+  border-color: #84868c;
+}
+
+.dock-orb {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 3.5rem;
+  height: 3.5rem;
+  padding: 0 1.25rem;
+  border-radius: 9999px;
+  background-color: #f0f1f3;
+  color: #0a0b0d;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  box-shadow: 0 18px 40px -18px rgba(0, 0, 0, 0.95);
+  transition:
+    transform 140ms ease,
+    opacity 140ms ease;
+}
+
+.dock-orb:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.dock-orb:disabled {
+  opacity: 0.35;
+}
+
+.menu-card {
+  overflow: hidden;
+  padding-bottom: 0.375rem;
+  border-radius: 22px;
+  border: 1px solid #3a3d42;
+  background-color: rgba(20, 22, 26, 0.93);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  box-shadow: 0 26px 60px -24px rgba(0, 0, 0, 0.95);
+}
+
+/* One corner left square on each, which is the whole of the chat metaphor here. */
+.bubble-agent {
+  padding: 0.875rem 1rem;
+  border-radius: 20px 20px 20px 6px;
+  border: 1px solid #24272c;
+  background-color: rgba(20, 22, 26, 0.72);
+}
+
+.bubble-you {
+  max-width: min(24rem, 100%);
+  padding: 0.625rem 0.9rem;
+  border-radius: 20px 20px 6px 20px;
+  border: 1px solid #24272c;
+  background-color: #1b1e23;
 }
 
 ::selection {
