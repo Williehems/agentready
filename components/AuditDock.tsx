@@ -11,6 +11,9 @@ import type { ActionKind } from "@/lib/types";
  * one question a URL cannot answer, which action the site exists for, and it
  * asks it late: the menu opens on click and picking an entry is what starts the
  * run. So there is no third click, and nothing to read before typing.
+ *
+ * While a run is in flight that same button is how it is called off, in the place
+ * the hand is already resting rather than as a new thing appearing somewhere else.
  */
 
 /** What the agent will actually attempt, in the visitor's words rather than the model's. */
@@ -26,13 +29,17 @@ export function AuditDock({
   url,
   onUrlChange,
   onRun,
+  onStop,
   running,
+  stopping,
   lastAction,
 }: {
   url: string;
   onUrlChange: (next: string) => void;
   onRun: (action: ActionKind) => void;
+  onStop: () => void;
   running: boolean;
+  stopping: boolean;
   lastAction?: ActionKind;
 }) {
   const [open, setOpen] = useState(false);
@@ -141,19 +148,32 @@ export function AuditDock({
           </div>
         ) : null}
 
+        {/*
+          One button, two jobs, because they are never both available: before a run
+          it opens the question, during one it ends the run. Held in the same place
+          so a stop needs no aiming, and the square is the only glyph anyone has to
+          recognise. It stays pressable until the stop has been asked for, and the
+          pulse afterwards is the browser being released, which takes a moment.
+        */}
         <button
           ref={trigger}
           type="button"
-          onClick={() => setOpen((v) => !v)}
-          disabled={!ready}
-          aria-haspopup="menu"
-          aria-expanded={open}
+          onClick={running ? onStop : () => setOpen((v) => !v)}
+          disabled={running ? stopping : !ready}
+          aria-haspopup={running ? undefined : "menu"}
+          aria-expanded={running ? undefined : open}
+          aria-label={running ? (stopping ? "Stopping the run" : "Stop the run") : undefined}
           className="dock-orb shrink-0"
         >
           {running ? (
             <span className="flex items-center gap-2">
-              <span className="inline-block h-1.5 w-1.5 animate-pulse-dot rounded-full bg-ink" />
-              <span className="hidden sm:inline">running</span>
+              <span
+                className={`inline-block h-2.5 w-2.5 rounded-[3px] bg-ink ${
+                  stopping ? "animate-pulse-dot" : ""
+                }`}
+                aria-hidden
+              />
+              <span className="hidden sm:inline">{stopping ? "stopping" : "stop"}</span>
             </span>
           ) : (
             "audit"

@@ -89,6 +89,7 @@ export function ChatStream({
   steps,
   status,
   running,
+  stopping,
   error,
   verdict,
 }: {
@@ -97,6 +98,7 @@ export function ChatStream({
   steps: StepEvent[];
   status?: StatusEvent;
   running: boolean;
+  stopping?: boolean;
   error?: string | null;
   verdict?: React.ReactNode;
 }) {
@@ -110,7 +112,7 @@ export function ChatStream({
       typeof window !== "undefined" &&
       window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
     end.current.scrollIntoView({ behavior: still ? "auto" : "smooth", block: "end" });
-  }, [steps.length, status?.message, error, verdict]);
+  }, [steps.length, status?.message, stopping, error, verdict]);
 
   const started = Boolean(host);
 
@@ -150,6 +152,21 @@ export function ChatStream({
           <div className="flex items-center gap-2.5 pl-1 text-[12px] text-muted">
             <span className="inline-block h-1.5 w-1.5 animate-pulse-dot rounded-full bg-grade-c" />
             {status.message}
+          </div>
+        </li>
+      ) : null}
+
+      {/*
+        Said as soon as the button is pressed, and left alongside whatever the run
+        is saying rather than in place of it. A stop can land mid-click, and the
+        wait between asking and the browser letting go is the one moment a person
+        would otherwise think nothing had happened.
+      */}
+      {running && stopping ? (
+        <li className="animate-fade-up flex justify-start">
+          <div className="pl-1 text-[12px] leading-relaxed text-dim">
+            Stopping. The run finishes the step it is on, releases the browser, and grades what
+            the agent reached.
           </div>
         </li>
       ) : null}

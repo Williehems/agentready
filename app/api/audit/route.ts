@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { runAudit } from "@/lib/agent";
 import { ACTIONS } from "@/lib/actions";
+import { beginRun, endRun } from "@/lib/runs";
 import { newRunId, normaliseTarget } from "@/lib/url";
 import type { RunEvent } from "@/lib/types";
 
@@ -43,6 +44,13 @@ export async function POST(req: Request) {
   const runId = newRunId();
   const encoder = new TextEncoder();
 
+  // One handle, pulled three ways, because all three mean the same thing and the
+  // cloud browser is billed until it is released: the stop button posts to
+  // /api/audit/stop, a tab that goes away aborts the request, and a client that
+  // stops reading cancels the stream.
+  const runner = beginRun(runId);
+  req.signal.addEventListener("abort", () => runner.abort());
+
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
       let open = true;
@@ -61,6 +69,7 @@ export async function POST(req: Request) {
           action: parsed.data.action,
           runId,
           onEvent: send,
+          signal: runner.signal,
         });
       } catch (err) {
         send({
@@ -70,12 +79,18 @@ export async function POST(req: Request) {
         });
       } finally {
         open = false;
+        endRun(runId);
         try {
           controller.close();
         } catch {
           // Already closed because the client disconnected.
         }
       }
+    },
+    cancel() {
+      // The reader went away mid-run. Whatever it was watching is still running and
+      // still costing, so it ends here too.
+      runner.abort();
     },
   });
 

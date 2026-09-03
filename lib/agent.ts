@@ -254,7 +254,22 @@ interface RunOptions {
   runId: string;
   maxSteps?: number;
   onEvent: (e: RunEvent) => void | Promise<void>;
+  /**
+   * Ends the run early, at the first point where it was about to spend more time.
+   * A stop is not a finding, so it is recorded the way the time limit is: the run
+   * is graded on what it reached and the site is not charged for the rest.
+   */
+  signal?: AbortSignal;
 }
+
+/**
+ * How a run that a person ended is written down.
+ *
+ * Phrased as a fact about the run rather than a fault of the page, because the
+ * grader reads `abandoned` and declines to blame a site for a run of ours that
+ * did not finish.
+ */
+export const STOPPED_BY_YOU = "you stopped the run";
 
 /**
  * What a decision cost, and any pause the free-tier governor imposed to afford it.
@@ -274,6 +289,7 @@ async function decide(
   isFirst: boolean,
   runId: string,
   meter: Meter = {},
+  signal?: AbortSignal,
 ): Promise<Outcome> {
   const recent = history.length
     ? `\n\nWHAT YOU HAVE ALREADY TRIED:\n${history.slice(-5).join("\n")}`
@@ -286,7 +302,7 @@ async function decide(
         { role: "system", content: systemPrompt(runId) },
         { role: "user", content: `TASK: ${goal}\n\n${state}${recent}` },
       ],
-      { maxTokens: 600, temperature: 0.1, timeoutMs, ...meter },
+      { maxTokens: 600, temperature: 0.1, timeoutMs, ...meter, signal },
     );
     const parsed = usable(raw);
     if (parsed) return { kind: "decided", decision: withOurEmail(parsed, runId) };
@@ -624,7 +640,7 @@ async function priceOnStranger(
  * not receiving a report once it is over.
  */
 export async function runAudit(opts: RunOptions): Promise<void> {
-  const { url, action, runId, onEvent } = opts;
+  const { url, action, runId, onEvent, signal } = opts;
   const maxSteps = opts.maxSteps ?? MAX_STEPS;
   const spec = ACTIONS[action];
   const shotDir = path.join(process.cwd(), "public", "runs", runId);
@@ -646,6 +662,25 @@ export async function runAudit(opts: RunOptions): Promise<void> {
   /** Set when the run ended for a reason of ours rather than the site's. */
   let abandoned: string | undefined;
   let launched: Awaited<ReturnType<typeof launchBrowser>> | undefined;
+
+  /**
+   * Whether someone has asked for this to end.
+   *
+   * Read wherever the run is about to commit to the next expensive thing, rather
+   * than once at the top, because the expensive things are seconds apart: a model
+   * call, a click that waits on the network, a whole extra page load at the end.
+   */
+  const stopped = () => signal?.aborted === true;
+  const stopHere = async () => {
+    abandoned = STOPPED_BY_YOU;
+    await emit({
+      type: "status",
+      message: stepCount
+        ? `Stopped after ${stepCount} steps, grading what the agent reached and releasing the browser`
+        : "Stopped before the agent had seen anything, so there is nothing to grade",
+      at: now(),
+    });
+  };
 
   /**
    * What this run cost the model, and what the key had left when it last answered.
@@ -740,6 +775,13 @@ export async function runAudit(opts: RunOptions): Promise<void> {
 
   try {
     await mkdir(shotDir, { recursive: true });
+    // Stopped in the first second or two, while the browser was still being
+    // acquired. Nothing has been launched, so nothing needs releasing, and the
+    // cheapest correct thing is to never open the session at all.
+    if (stopped()) {
+      await stopHere();
+      return;
+    }
     await emit({ type: "status", message: "Acquiring a stealth browser", at: now() });
     launched = await launchBrowser({ stealth: true });
     // The session id goes out now rather than only with the verdict, so a run that
@@ -780,6 +822,10 @@ export async function runAudit(opts: RunOptions): Promise<void> {
     }
 
     for (let i = 0; i < maxSteps; i++) {
+      if (stopped()) {
+        await stopHere();
+        break;
+      }
       if (clock.expired) {
         abandoned = `the run hit its own ${Math.round(RUN_BUDGET_MS / 1000)}s time limit`;
         await emit({
@@ -827,7 +873,17 @@ export async function runAudit(opts: RunOptions): Promise<void> {
         i === 0,
         runId,
         meter,
+        signal,
       );
+      // Checked before the answer is read, and before the action it chose is
+      // performed. A stop that lands mid-call comes back from the model as a
+      // failed call, and what ended this run was the stop, not the abort the HTTP
+      // client threw on its way out. Ending here also spares the site a click
+      // that no one is left to watch.
+      if (stopped()) {
+        await stopHere();
+        break;
+      }
       if (outcome.kind === "unavailable") {
         // Not a step and not a verdict on the site: our side could not think. It
         // stops the run and it is stated plainly, but it does not become evidence
@@ -945,15 +1001,16 @@ export async function runAudit(opts: RunOptions): Promise<void> {
     //
     // So the front page is asked directly, but only when the flow never passed a
     // price, only once the flow is over, and never on a run whose clock has already
-    // run out. A run that started at the front page has its answer already and
-    // spends nothing here.
+    // run out or that somebody asked to end: either way the load is time no one
+    // agreed to spend. A run that started at the front page has its answer already
+    // and spends nothing here.
     let priceOnHome: boolean | undefined;
     if (perceptions.length && !perceptions.some((p) => p.hasPrice)) {
       const { home, alreadyThere } = frontPage(url);
       if (alreadyThere) {
         // Already looked, and found nothing. That is an answer, not a gap.
         priceOnHome = false;
-      } else if (home && launched && !clock.expired) {
+      } else if (home && launched && !clock.expired && !stopped()) {
         await emit({
           type: "status",
           message: `The flow never passed a price, so checking the front page for one: ${home}`,
