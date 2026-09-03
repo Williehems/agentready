@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { act, frontPage, personaEmail, usable, withOurEmail } from "../lib/agent";
+import { act, frontPage, personaEmail, priceOnFrontPage, usable, withOurEmail } from "../lib/agent";
 import type { Perception } from "../lib/types";
 
 describe("usable: reading the model's answer", () => {
@@ -148,6 +148,52 @@ describe("frontPage: the page a site puts its prices on", () => {
 
   it("says nothing rather than guessing when the URL will not parse", () => {
     assert.deepEqual(frontPage("not a url"), { alreadyThere: false });
+  });
+});
+
+/**
+ * Watching a front page for a price instead of glancing at one.
+ *
+ * The bug this pins: plausible.io renders its prices after load, and one glance a
+ * fixed moment later answered true on one run and false on the next, minutes apart.
+ * A false here is charged to the site as a blocker, so it has to mean we watched.
+ */
+describe("priceOnFrontPage: giving the page time to render its prices", () => {
+  const fakePage = (reads: string[]) => {
+    let n = 0;
+    const page = {
+      goto: async () => {},
+      evaluate: async () => reads[Math.min(n++, reads.length - 1)],
+      waitForTimeout: async () => {},
+    };
+    return { page: page as unknown as Parameters<typeof priceOnFrontPage>[0], seen: () => n };
+  };
+
+  it("answers as soon as the price appears, not on the first glance", async () => {
+    const f = fakePage(["Loading...", "Simple pricing", "10k pageviews €9 /month"]);
+    assert.equal(await priceOnFrontPage(f.page, "https://plausible.io/", 60, 5), true);
+    assert.equal(f.seen(), 3, "kept looking until the slider rendered");
+  });
+
+  it("says no only after watching for the whole window", async () => {
+    const f = fakePage(["Book a table. Call us to hear our rates."]);
+    assert.equal(await priceOnFrontPage(f.page, "https://example.com/", 60, 5), false);
+    assert.ok(f.seen() > 1, `looked more than once, ${f.seen()} times`);
+  });
+
+  it("says nothing at all when the page will not answer", async () => {
+    for (const broken of [
+      { goto: async () => Promise.reject(new Error("net::ERR_ABORTED")) },
+      { evaluate: async () => Promise.reject(new Error("Execution context destroyed")) },
+    ]) {
+      const page = {
+        goto: async () => {},
+        evaluate: async () => "€9",
+        waitForTimeout: async () => {},
+        ...broken,
+      } as unknown as Parameters<typeof priceOnFrontPage>[0];
+      assert.equal(await priceOnFrontPage(page, "https://example.com/", 60, 5), undefined);
+    }
   });
 });
 

@@ -190,6 +190,14 @@ function systemPrompt(runId: string): string {
     String(today.getDate()).padStart(2, "0"),
   ].join("-");
 
+  // The (disabled) rule spells out that a challenge can clear on its own, because
+  // the model read one as a wall. Measured on plausible.io/register, where Friendly
+  // Captcha resolves with no interaction: one run reached submit at step 4, and the
+  // next gave up at step 3 because the button "is disabled due to unsolved Friendly
+  // Captcha, which cannot be completed automatically". That give_up put a captcha
+  // hard blocker and a 45-point cap on a site whose signup works, which is our model
+  // quitting rather than the site refusing. Once, not repeatedly: a spent step is
+  // cheaper than a wrong finding, but waiting is not a strategy either.
   return `You are an AI agent operating a real web browser on behalf of a person.
 You are not a crawler and not a tester: you are trying to actually get something done.
 
@@ -212,8 +220,15 @@ Rules:
 - An element marked (disabled) is on the page but cannot be clicked or filled, so do
   not try. It is a symptom: something above it is unsatisfied, usually an empty
   required field, an unticked box, or a challenge still resolving. Deal with that
-  first. If nothing on the page can satisfy it, give_up and say which control was
-  disabled.
+  first.
+- A disabled submit is rarely the end of the road. Most challenges need no
+  interaction at all and clear themselves within seconds, so a challenge with no
+  control of its own in the list is something to wait out, not a wall. Fill every
+  empty field first. Then, if it is still disabled and there is nothing left to
+  fill, "scroll" once to see the page as it stands now: the state you are sent is
+  read fresh after every action. Only a control still disabled after that, on a form
+  with every field filled, means this site cannot be used: then give_up and say
+  which control was disabled.
 - Use realistic placeholder details when a form needs them: name "Alex Morgan",
   email "${personaEmail(runId)}", phone "+1 415 555 0132", company "Morgan Labs".
   Whatever address you type is replaced with that one, so a form that says an email
@@ -401,6 +416,19 @@ export async function act(page: ActPage, p: Perception, d: Decision): Promise<st
 
 /** How long to spend on the front page once the flow is over. One nav, no more. */
 const PRICE_CHECK_MS = 12_000;
+/**
+ * How long to keep watching that page after it opens, and how often to look.
+ *
+ * Because a published price is often not in the markup. plausible.io serves its
+ * pricing through a slider that renders after load: the same front page answered
+ * true on run mtlke0h0 and false on run mtlkppbb, minutes apart, and `curl` on it
+ * finds no currency symbol anywhere in the HTML. A single glance a fixed moment
+ * after DOMContentLoaded is a coin toss, and this finding is charged to the site,
+ * so it has to be the answer to "we watched and nothing came" rather than to "we
+ * looked before it arrived".
+ */
+const PRICE_SETTLE_MS = 6_000;
+const PRICE_POLL_MS = 700;
 
 /**
  * The site's front page as seen from the URL we were handed, and whether the run
@@ -430,23 +458,59 @@ export function frontPage(startUrl: string): { home?: string; alreadyThere: bool
  * rather than a finding, so an unreachable front page is never scored as a site
  * without prices.
  */
-async function priceOnFrontPage(
+export async function priceOnFrontPage(
   page: ActPage,
   home: string,
+  settleMs = PRICE_SETTLE_MS,
+  pollMs = PRICE_POLL_MS,
 ): Promise<boolean | undefined> {
   try {
     await page.goto(home, { timeout: PRICE_CHECK_MS, waitUntil: "domcontentloaded" });
-    await page.waitForTimeout(1200);
-    // evaluate takes no timeout of its own, and a wedged main thread never answers
-    // it. A clock here, or one stuck front page holds the verdict hostage.
-    const text = await withTimeout(
-      page.evaluate<string>(() => (document.body ? document.body.innerText : "")),
-      5_000,
-      "the front page",
-    );
-    return looksPriced(text);
+    const until = Date.now() + settleMs;
+    for (;;) {
+      // evaluate takes no timeout of its own, and a wedged main thread never answers
+      // it. A clock here, or one stuck front page holds the verdict hostage.
+      const text = await withTimeout(
+        page.evaluate<string>(() => (document.body ? document.body.innerText : "")),
+        5_000,
+        "the front page",
+      );
+      if (looksPriced(text)) return true;
+      if (Date.now() + pollMs >= until) return false;
+      await page.waitForTimeout(pollMs);
+    }
   } catch {
     return undefined;
+  }
+}
+
+/**
+ * The same question asked as a stranger, in a browser context of its own.
+ *
+ * Because the flow changes who the site thinks we are. Measured on plausible.io
+ * within the same few minutes: the run that gave up before submitting found
+ * "$9 $14 $19" on the front page at DOMContentLoaded, and the two runs that
+ * completed the registration found no price there at all. Signing up leaves a
+ * session cookie, and the front page then serves the signed-in app instead of the
+ * pricing. Charging a site for a price our own run hid is the one kind of wrong
+ * finding this cannot afford, so the question is put in a clean jar: no cookies, no
+ * storage, nothing this run did.
+ *
+ * Same session, so no extra minutes and nothing more to pay for. The context is
+ * closed either way.
+ */
+async function priceOnStranger(
+  browser: NonNullable<Awaited<ReturnType<typeof launchBrowser>>>["browser"],
+  home: string,
+): Promise<boolean | undefined> {
+  let context: Awaited<ReturnType<typeof browser.newContext>> | undefined;
+  try {
+    context = await browser.newContext();
+    return await priceOnFrontPage((await context.newPage()) as unknown as ActPage, home);
+  } catch {
+    return undefined;
+  } finally {
+    await context?.close().catch(() => {});
   }
 }
 
@@ -478,14 +542,6 @@ export async function runAudit(opts: RunOptions): Promise<void> {
   /** Set when the run ended for a reason of ours rather than the site's. */
   let abandoned: string | undefined;
   let launched: Awaited<ReturnType<typeof launchBrowser>> | undefined;
-  /**
-   * The tab the flow ran in, kept where the block that ends the run can reach it.
-   *
-   * There is one question left to ask a page after the flow is over, and it has to
-   * be asked from whatever end the run came to: normally, on a break, or on a
-   * throw. That is what the alias buys.
-   */
-  let flowTab: ActPage | undefined;
 
   /**
    * What this run cost the model, and what the key had left when it last answered.
@@ -599,7 +655,6 @@ export async function runAudit(opts: RunOptions): Promise<void> {
       30_000,
       "opening a tab",
     )) as unknown as ActPage;
-    flowTab = page;
     await page.setViewportSize({ width: 1280, height: 800 }).catch(() => {});
     try {
       page.context().on("page", (tab) => opened.push(tab));
@@ -794,13 +849,13 @@ export async function runAudit(opts: RunOptions): Promise<void> {
       if (alreadyThere) {
         // Already looked, and found nothing. That is an answer, not a gap.
         priceOnHome = false;
-      } else if (home && flowTab && !clock.expired) {
+      } else if (home && launched && !clock.expired) {
         await emit({
           type: "status",
           message: `The flow never passed a price, so checking the front page for one: ${home}`,
           at: now(),
         });
-        priceOnHome = await priceOnFrontPage(flowTab, home);
+        priceOnHome = await priceOnStranger(launched.browser, home);
         if (priceOnHome === undefined) {
           await emit({
             type: "status",
