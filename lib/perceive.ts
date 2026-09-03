@@ -157,6 +157,14 @@ function modalIsOpen(): boolean {
 
 const MAX_ELEMENTS = 60;
 const MAX_TEXT = 2800;
+/**
+ * How many controls that cannot be operated are worth describing.
+ *
+ * A greyed-out submit is the answer to why a form is stuck, so a few belong in
+ * the list. A disabled table of forty rows is not an answer to anything, and
+ * every line of it is prompt budget spent on something the agent cannot press.
+ */
+const MAX_DISABLED = 8;
 /** Snapshots run a few KB. Past this the page is beyond what one prompt can hold. */
 const MAX_SNAPSHOT = 500_000;
 /** How far back to look for a label when a control has no accessible name. */
@@ -361,13 +369,38 @@ export function parseAriaSnapshot(snapshot: string, modalOpen = false): Perceive
   const seen = new Set<string>();
   const visible = modalOpen ? reachable(nodes) : nodes;
 
+  // A control that cannot be operated is still described, but never in a slot a
+  // working one wanted.
+  //
+  // Described, because dropping it makes the site look emptier than it is. The
+  // snapshot marks these `[disabled]` and hands over a usable ref; we were the
+  // ones throwing them away. Measured on plausible.io's signup: a visible 416x42
+  // submit, disabled until a captcha resolves, was absent from our element list
+  // while the page text plainly read "Start my free trial", so the agent reported
+  // no submit button on a page that has one. "There is no submit button" reads as
+  // our failure to see. "The submit button is disabled" is a finding an owner can
+  // act on.
+  //
+  // Ranked below the live ones, because they are context and not actions. Every
+  // working control is counted first and its slot held back, so a page of dead
+  // rows can never crowd out the buttons a visitor could actually press. The
+  // count is of nodes rather than of emitted elements, so duplicate links make it
+  // an overestimate: that errs toward keeping live controls, which is the side to
+  // err on.
+  const live = visible.filter((n) => INTERACTIVE.has(n.role) && !n.disabled).length;
+  let deadLeft = Math.min(MAX_DISABLED, Math.max(0, MAX_ELEMENTS - live));
+
   for (let i = 0; i < visible.length && out.length < MAX_ELEMENTS; i++) {
     const n = visible[i];
-    if (!INTERACTIVE.has(n.role) || n.disabled) continue;
+    if (!INTERACTIVE.has(n.role)) continue;
+    if (n.disabled && deadLeft <= 0) continue;
 
     const name = n.name || inferName(visible, i);
     if (COLLAPSIBLE.has(n.role)) {
-      const key = `${n.role}::${name.toLowerCase()}::${n.href ?? ""}`;
+      // State is part of the key. A live control and a dead one of the same name
+      // are two different facts about the page, and a dead one arriving first
+      // must not swallow the one that works.
+      const key = `${n.role}::${name.toLowerCase()}::${n.href ?? ""}::${n.disabled}`;
       if (seen.has(key)) continue;
       seen.add(key);
     }
@@ -377,6 +410,10 @@ export function parseAriaSnapshot(snapshot: string, modalOpen = false): Perceive
     if (n.href) el.href = n.href;
     if (n.options?.length) el.options = n.options.slice(0, MAX_OPTIONS);
     if (n.value) el.value = n.value;
+    if (n.disabled) {
+      el.disabled = true;
+      deadLeft--;
+    }
     out.push(el);
   }
 
@@ -461,10 +498,15 @@ export function renderState(p: Perception, stepsLeft: number, textBudget = MAX_T
  * One line of the numbered list. Choices are spelled out so a select can name
  * one, and contents are spelled out so the model can see what it has already
  * filled in rather than filling it again.
+ *
+ * The disabled mark goes directly after the name, where it cannot be mistaken
+ * for part of the value or the target. It is listed at all so the model can say
+ * why it is stuck instead of reporting the control missing.
  */
 function describe(e: PerceivedElement): string {
+  const dead = e.disabled ? "  (disabled)" : "";
   const target = e.href ? `  -> ${e.href}` : "";
   const holds = e.value ? `  = "${e.value}"` : "";
   const choices = e.options?.length ? `  choices: ${e.options.join(", ")}` : "";
-  return `${e.index}. [${e.role}] ${e.name}${holds}${target}${choices}`;
+  return `${e.index}. [${e.role}] ${e.name}${dead}${holds}${target}${choices}`;
 }

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { personaEmail, usable, withOurEmail } from "../lib/agent";
+import { act, personaEmail, usable, withOurEmail } from "../lib/agent";
+import type { Perception } from "../lib/types";
 
 describe("usable: reading the model's answer", () => {
   it("takes a well-formed decision as it stands", () => {
@@ -112,3 +113,82 @@ describe("withOurEmail: the run owns its address", () => {
     }
   });
 });
+
+/** A locator that records what was asked of it and never touches a browser. */
+interface FakeLocator {
+  first(): FakeLocator;
+  click(): Promise<void>;
+  fill(value: string): Promise<void>;
+  selectOption(value: unknown): Promise<string[]>;
+}
+
+/**
+ * Aiming at a control the page will not accept.
+ *
+ * The prompt tells the model not to, and sometimes it does anyway. Measured on
+ * plausible.io's signup, where the submit stays disabled until a captcha
+ * resolves: now that such a control is described rather than hidden, it can also
+ * be targeted, and what happens then is worth pinning down.
+ */
+describe("act: a control that cannot be operated", () => {
+  const fake = () => {
+    const asked: string[] = [];
+    const locator: FakeLocator = {
+      first: () => locator,
+      click: async () => void asked.push("click"),
+      fill: async (value: string) => void asked.push(`fill ${value}`),
+      selectOption: async () => (asked.push("select"), []),
+    };
+    const page = {
+      locator: (selector: string) => (asked.push(`locator ${selector}`), locator),
+      getByRole: (role: string) => (asked.push(`getByRole ${role}`), locator),
+      waitForLoadState: async () => {},
+      waitForTimeout: async () => {},
+      mouse: { wheel: async () => {} },
+    };
+    return { asked, page: page as unknown as Parameters<typeof act>[0] };
+  };
+
+  const state: Perception = {
+    url: "https://plausible.io/register",
+    title: "Plausible Analytics",
+    text: "Start my free trial",
+    jsGated: false,
+    hasPrice: false,
+    elements: [
+      { index: 1, role: "checkbox", name: "I am human", ref: "e7" },
+      { index: 2, role: "button", name: "Start my free trial", ref: "e9", disabled: true },
+    ],
+  };
+
+  it("names the disabled control instead of waiting out the click", async () => {
+    const f = fake();
+    const why = await act(f.page, state, {
+      action: "click",
+      target: 2,
+      reasoning: "Submit the form",
+    });
+    assert.match(why ?? "", /button "Start my free trial" is disabled/);
+    assert.deepEqual(f.asked, [], "and never reaches for it, which is the eight seconds saved");
+  });
+
+  it("refuses a type into one as readily as a click", async () => {
+    const f = fake();
+    const why = await act(f.page, state, {
+      action: "type",
+      target: 2,
+      value: "anything",
+      reasoning: "Fill it",
+    });
+    assert.match(why ?? "", /is disabled, so a type on it cannot land/);
+    assert.deepEqual(f.asked, []);
+  });
+
+  it("still operates the working control beside it", async () => {
+    const f = fake();
+    const why = await act(f.page, state, { action: "click", target: 1, reasoning: "Tick it" });
+    assert.equal(why, undefined);
+    assert.deepEqual(f.asked, ["locator aria-ref=e7", "click"]);
+  });
+});
+

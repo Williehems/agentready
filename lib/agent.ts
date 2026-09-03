@@ -209,6 +209,11 @@ Rules:
   nothing: "select" is the only way to set one.
 - An element listed with = "something" already holds that value. It is filled in.
   Move on to the next empty field or to the submit control; do not fill it again.
+- An element marked (disabled) is on the page but cannot be clicked or filled, so do
+  not try. It is a symptom: something above it is unsatisfied, usually an empty
+  required field, an unticked box, or a challenge still resolving. Deal with that
+  first. If nothing on the page can satisfy it, give_up and say which control was
+  disabled.
 - Use realistic placeholder details when a form needs them: name "Alex Morgan",
   email "${personaEmail(runId)}", phone "+1 415 555 0132", company "Morgan Labs".
   Whatever address you type is replaced with that one, so a form that says an email
@@ -321,7 +326,7 @@ interface Locatorish {
 }
 
 /** Execute one decision. Returns an error string when the element would not budge. */
-async function act(page: ActPage, p: Perception, d: Decision): Promise<string | undefined> {
+export async function act(page: ActPage, p: Perception, d: Decision): Promise<string | undefined> {
   const settle = async () => {
     await page.waitForLoadState("domcontentloaded", { timeout: 8000 }).catch(() => {});
     await page.waitForTimeout(900);
@@ -340,6 +345,17 @@ async function act(page: ActPage, p: Perception, d: Decision): Promise<string | 
 
   const el = resolveTarget(p, d.target);
   if (!el) return `no element numbered ${String(d.target)}`;
+
+  // Refused here rather than at the locator, now that the list describes controls
+  // that cannot be operated. Being able to name the button that is stopping the
+  // form means the model can also aim at it, and Playwright answers that by
+  // waiting out its whole ceiling for an element that was never going to become
+  // clickable: eight seconds of a four-minute budget, then a wall of retry logs
+  // in the failure text. Said plainly and immediately instead, so the transcript
+  // records the disabled control as the reason rather than as a timeout.
+  if (el.disabled) {
+    return `${el.role} "${el.name}" is disabled, so a ${d.action} on it cannot land`;
+  }
 
   // Prefer the snapshot handle: it points at the one node we showed the model.
   // Falling back to role and name re-guesses, and on a page with three "Sign up"

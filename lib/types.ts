@@ -110,6 +110,16 @@ export interface PerceivedElement {
    * every one reported ok, and the run ended on a loop blocker.
    */
   value?: string;
+  /**
+   * The control is on the page but cannot be operated: the snapshot marked it
+   * `[disabled]`, which covers both the HTML attribute and `aria-disabled`.
+   *
+   * Reported rather than hidden, because the difference between "there is no
+   * submit button" and "the submit button is disabled" is the difference between
+   * our blindness and the site's finding. Absent when the control works, so the
+   * common case costs nothing.
+   */
+  disabled?: true;
 }
 
 export interface Perception {

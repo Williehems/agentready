@@ -139,14 +139,17 @@ describe("parseAriaSnapshot: the awkward cases", () => {
     assert.deepEqual(parseAriaSnapshot("not an outline at all\n\n{}"), []);
   });
 
-  it("drops disabled controls, which a visitor cannot use either", () => {
+  it("keeps a disabled control, marked, rather than reporting a page emptier than it is", () => {
     const els = parseAriaSnapshot(
       `- button "Buy now" [disabled] [ref=e1]\n- button "Contact sales" [ref=e2]`,
     );
     assert.deepEqual(
       els.map((e) => e.name),
-      ["Contact sales"],
+      ["Buy now", "Contact sales"],
     );
+    assert.equal(els[0].disabled, true, "and says which one cannot be pressed");
+    assert.equal(els[1].disabled, undefined, "while a working control carries no mark");
+    assert.equal(els[0].ref, "e1", "the snapshot hands over a handle for it either way");
   });
 
   it("unescapes a quoted name and keeps an embedded colon", () => {
@@ -171,6 +174,51 @@ describe("parseAriaSnapshot: the awkward cases", () => {
     const els = parseAriaSnapshot(many);
     assert.equal(els.length, 60);
     assert.equal(els[59].index, 60);
+  });
+});
+
+/**
+ * The plausible.io signup case. Its submit button is visible, 416x42, and carries
+ * the disabled attribute until a captcha resolves; the snapshot listed it and we
+ * discarded it, so the agent reported no submit button on a page that has one.
+ */
+describe("parseAriaSnapshot: controls that cannot be operated", () => {
+  it("treats aria-disabled the same as the attribute, because the snapshot does", () => {
+    const els = parseAriaSnapshot(
+      `- button "Attribute" [disabled] [ref=e1]\n- button "Aria" [disabled] [ref=e2]`,
+    );
+    assert.deepEqual(
+      els.map((e) => [e.name, e.disabled]),
+      [
+        ["Attribute", true],
+        ["Aria", true],
+      ],
+    );
+  });
+
+  it("never gives a dead control a slot a working one wanted", () => {
+    const dead = Array.from({ length: 40 }, (_, i) => `- button "Dead ${i}" [disabled] [ref=d${i}]`);
+    const live = Array.from({ length: 60 }, (_, i) => `- button "Live ${i}" [ref=e${i}]`);
+    const els = parseAriaSnapshot([...dead, ...live].join("\n"));
+    assert.equal(els.length, 60);
+    assert.ok(
+      els.every((e) => !e.disabled),
+      "a page already full of working controls has no room to spare",
+    );
+  });
+
+  it("describes a handful when there is room, and not forty", () => {
+    const many = Array.from({ length: 40 }, (_, i) => `- button "Dead ${i}" [disabled] [ref=d${i}]`);
+    const els = parseAriaSnapshot(many.join("\n"));
+    assert.equal(els.length, 8);
+    assert.equal(els[0].name, "Dead 0", "kept in the order the page has them");
+  });
+
+  it("lets a dead control and a working one of the same name both through", () => {
+    const both = `- link "Next" [disabled] [ref=e1]:\n  - /url: /next\n- link "Next" [ref=e2]:\n  - /url: /next`;
+    const els = parseAriaSnapshot(both);
+    assert.equal(els.length, 2, "the dead one must not swallow the one that works");
+    assert.equal(els.filter((e) => !e.disabled).length, 1);
   });
 });
 
@@ -447,13 +495,33 @@ describe("renderState", () => {
     assert.match(state, /2\. \[textbox\] Phone Number$/m, "and an empty field says nothing");
   });
 
-  it("keeps a link's destination visible so a dead end is obvious to the model too", () => {    const state = renderState(
+  it("keeps a link's destination visible so a dead end is obvious to the model too", () => {
+    const state = renderState(
       perception({
         elements: [{ index: 1, role: "link", name: "Chat", href: "https://wa.me/234801" }],
       }),
       6,
     );
     assert.match(state, /1\. \[link\] Chat {2}-> https:\/\/wa\.me\/234801/);
+  });
+
+  /**
+   * So the model can say why it is stuck. Told that the submit exists and is dead,
+   * it looks for what is unsatisfied; told nothing, it reports no submit button and
+   * the reader blames our eyes rather than the page.
+   */
+  it("marks a control that cannot be operated, right after its name", () => {
+    const state = renderState(
+      perception({
+        elements: [
+          { index: 1, role: "checkbox", name: "I am human", ref: "e7" },
+          { index: 2, role: "button", name: "Start my free trial", ref: "e9", disabled: true },
+        ],
+      }),
+      6,
+    );
+    assert.match(state, /2\. \[button\] Start my free trial {2}\(disabled\)$/m);
+    assert.match(state, /1\. \[checkbox\] I am human$/m, "and leaves a working control unmarked");
   });
 
   it("says the tree was empty rather than printing nothing at all", () => {
