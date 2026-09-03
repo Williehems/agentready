@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { usable } from "../lib/agent";
+import { personaEmail, usable, withOurEmail } from "../lib/agent";
 
 describe("usable: reading the model's answer", () => {
   it("takes a well-formed decision as it stands", () => {
@@ -72,6 +72,43 @@ describe("usable: reading the model's answer", () => {
   it("refuses anything that is not an object at all", () => {
     for (const raw of [null, undefined, "click", 7, [{ action: "click" }]]) {
       assert.equal(usable(raw), undefined, JSON.stringify(raw) ?? "undefined");
+    }
+  });
+});
+
+describe("withOurEmail: the run owns its address", () => {
+  const runId = "mtlefgqt-1vbofh";
+  const ours = personaEmail(runId);
+
+  it("gives every run its own address", () => {
+    assert.notEqual(personaEmail("aaa-111"), personaEmail("bbb-222"));
+    assert.match(ours, /^[^\s@]+@example\.com$/);
+  });
+
+  it("replaces whatever address the model typed", () => {
+    // Both measured on live plausible.io runs: the address it defaults to, and the
+    // one it invents after the site says that one is taken.
+    for (const typed of ["alex.morgan.test@example.com", "alex.morgan2.test@example.com", "  x@y.co  "]) {
+      const d = withOurEmail({ action: "type", target: 3, value: typed, reasoning: "" }, runId);
+      assert.equal(d.value, ours, typed);
+    }
+  });
+
+  it("leaves it alone when it is already ours", () => {
+    const d = { action: "type" as const, target: 3, value: ours, reasoning: "" };
+    assert.equal(withOurEmail(d, runId), d);
+  });
+
+  it("touches nothing that is not an email being typed", () => {
+    const untouched = [
+      { action: "type" as const, target: 1, value: "Alex Morgan", reasoning: "" },
+      { action: "type" as const, target: 2, value: "+1 415 555 0132", reasoning: "" },
+      { action: "type" as const, target: 4, value: "2026-09-10", reasoning: "" },
+      { action: "select" as const, target: 5, value: "someone@example.com", reasoning: "" },
+      { action: "click" as const, target: 6, reasoning: "" },
+    ];
+    for (const d of untouched) {
+      assert.equal(withOurEmail(d, runId), d, JSON.stringify(d));
     }
   });
 });

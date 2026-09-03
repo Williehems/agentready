@@ -426,7 +426,13 @@ export async function perceive(page: AgentPage, timeoutMs = PERCEIVE_MS): Promis
     // A real page with content has both actionable elements and prose. Missing
     // both is the signature of a JS-gated or blocked page.
     jsGated: elements.length === 0 && text.length < 200,
-    hasPrice: PRICE_RE.test(text),
+    // Tested against the whole page, not the trimmed copy above. MAX_TEXT is a
+    // token budget for the model, and a price that happens to sit below it is
+    // still selectable text on the page. Measured on plausible.io: the pricing
+    // slider reads in euros and the run was charged no-structured-price anyway,
+    // because our own truncation cut the page off above it. Charging a site for
+    // what our trimming hid is the one kind of wrong finding this cannot afford.
+    hasPrice: PRICE_RE.test(rawText),
   };
 }
 

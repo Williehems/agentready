@@ -336,6 +336,79 @@ describe("grade: the soft findings", () => {
   });
 });
 
+describe("grade: a wall that wants a code from an inbox", () => {
+  // Verbatim from the plausible.io run, screenshot 05: the page the agent gave up
+  // on after filling and submitting the signup form.
+  const codeWall = page({
+    url: "https://plausible.io/register",
+    title: "Plausible Analytics",
+    text: `${PROSE}\nCheck your email\nWe've sent an email with your code to: alex.morgan.test@example.com\nActivate account\nDidn't receive it? Resend code or change email`,
+    elements: [el(1, "textbox", "Activation code"), el(2, "button", "Activate account")],
+  });
+  const reached = transcript({
+    action: "signup",
+    perceptions: [page({ elements: [el(1, "link", "Sign up", "/register")] }), codeWall],
+    gaveUp: true,
+    stepCount: 9,
+  });
+
+  it("names the code wall rather than the pricing copy", () => {
+    const v = grade(reached);
+    // The run this was written from reported no-structured-price first, which sent
+    // the reader to look at prices when an email code was what stopped the agent.
+    assert.equal(v.blockers[0]?.blocker, "verification-gate");
+    assert.ok(v.blockers.some((b) => b.blocker === "no-structured-price"));
+    assert.match(v.summary, /verification-gate/);
+    assert.match(v.blockers[0]!.detail, /check your email/);
+  });
+
+  it("does not cap the score, because emailing a code is defensible", () => {
+    const priced = transcript({
+      ...reached,
+      perceptions: [
+        page({ hasPrice: true, elements: [el(1, "link", "Sign up", "/register")] }),
+        { ...codeWall, hasPrice: true },
+      ],
+    });
+    const v = grade(priced);
+    assert.deepEqual(v.blockers.map((b) => b.blocker), ["verification-gate"]);
+    // 55 is the give-up cap, which this run earned by giving up. Not the 45 a hard
+    // blocker would have forced, and the same run that keeps trying lands on its
+    // full 15 + 20 + 25 for everything but the completion.
+    assert.equal(v.score, 55);
+    assert.equal(grade({ ...priced, gaveUp: false }).score, 60);
+    assert.equal(grade({ ...priced, gaveUp: false }).grade, "C");
+  });
+
+  it("reads the last page only, so marketing copy earlier in the run is not a wall", () => {
+    // "Check your inbox" on a newsletter panel the agent walked straight past is
+    // not the reason a later step failed.
+    const passedThrough = transcript({
+      perceptions: [{ ...codeWall }, page({ url: "https://example.com/pricing", hasPrice: true })],
+      stepCount: 3,
+    });
+    assert.ok(!blockers(passedThrough).includes("verification-gate"));
+  });
+
+  it("says nothing when the agent got through it anyway", () => {
+    assert.ok(!blockers(transcript({ ...reached, declaredDone: true, gaveUp: false })).includes("verification-gate"));
+  });
+
+  it("reads the controls too, for a page whose prose did not reach us", () => {
+    // The live run this was written from ended on exactly this page and was graded
+    // without a verification-gate, so the copy was not what the grader saw. The
+    // buttons and links were.
+    const noProse = page({
+      url: "https://plausible.io/activate",
+      title: "Plausible Analytics",
+      text: "",
+      elements: [el(1, "textbox", ""), el(2, "button", "Activate account"), el(3, "link", "Resend code", "#")],
+    });
+    const v = grade(transcript({ perceptions: [page(), noProse], gaveUp: true, stepCount: 9 }));
+    assert.equal(v.blockers[0]?.blocker, "verification-gate");
+  });
+});
+
 describe("grade: milestones and letters", () => {
   it("withholds understood-offering when there is barely any text", () => {
     const v = grade(transcript({ perceptions: [page({ text: "Coming soon." })] }));

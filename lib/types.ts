@@ -15,6 +15,7 @@ export type Blocker =
   | "bot-wall"
   | "captcha"
   | "js-gate"
+  | "verification-gate"
   | "no-structured-price"
   | "dead-end-cta"
   | "form-stall"

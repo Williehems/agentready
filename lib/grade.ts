@@ -72,6 +72,53 @@ const CAPTCHA_SIGNS = ["captcha", "recaptcha", "hcaptcha", "turnstile", "i'm not
 
 const AUTH_SIGNS = ["sign in to continue", "log in to continue", "please log in", "login required", "members only"];
 
+/**
+ * A wall that asks for something only a human with an inbox or a phone can hand
+ * over: a code mailed or texted to an address, entered back into the page.
+ *
+ * Drawn from the page that prompted this, screenshot 05 of the plausible.io run:
+ * "Check your email", "We've sent an email with your code to: ...", a masked
+ * four-box code field, "Activate account", "Didn't receive it? Resend code".
+ * The rest are the same wall in other companies' wording.
+ *
+ * Phrases, not words. "code" alone appears in every developer site on earth and
+ * "verify" appears in the bot-wall list next door.
+ */
+const VERIFY_SIGNS = [
+  "check your email",
+  "check your inbox",
+  "with your code",
+  "code we sent",
+  "code sent to",
+  "verification code",
+  "confirmation code",
+  "activation code",
+  "enter the code",
+  "resend code",
+  "one-time code",
+  "one-time password",
+  "confirm your email address",
+  "verify your email address",
+  "we sent a text",
+  "sent you a text",
+  "activate account",
+  "activate your account",
+];
+
+/**
+ * One page as everything it says: title, prose, and the names of its controls.
+ *
+ * The controls are in here because the prose is not always there to read. The run
+ * that prompted this ended on a page whose heading was "Check your email" and got
+ * no verification-gate, so something about that page did not reach the grader as
+ * text, while its buttons ("Activate account") and links ("Resend code") came
+ * through as elements. A wall is identified as reliably by its controls as by its
+ * copy, and reading both costs nothing.
+ */
+function lastPage(p: Perception): string {
+  return [p.title, p.text, ...p.elements.map((e) => e.name)].join("\n").toLowerCase();
+}
+
 function textOf(t: Transcript): string {
   return t.perceptions.map((p) => `${p.title}\n${p.text}`).join("\n").toLowerCase();
 }
@@ -178,6 +225,29 @@ export function grade(t: Transcript): Verdict {
       detail: handoff
         ? `The site handed the action off to ${handoffLabel(handoff)} in a separate tab. A browser agent cannot follow it, so the action cannot be finished in the browser.`
         : "The only route to the action hands off to WhatsApp, phone, or email. A browser agent cannot follow it, so the visit ends here.",
+    });
+  }
+
+  // The flow asked for a code out of an inbox. Measured on plausible.io: the run
+  // filled the form, submitted it, landed on "Check your email", and was graded
+  // D with no-structured-price as the primary blocker, sending the reader off to
+  // look at pricing copy when what stopped the agent was an email code.
+  //
+  // Read off the last page only, not the whole transcript. These phrases are
+  // ordinary marketing copy elsewhere ("check your inbox for our newsletter"),
+  // and it is the run ending on such a page that is the evidence. Costs recall on
+  // a run that wanders one step past the wall, which is the right trade: a
+  // finding pointing at the wrong wall is worse than one we did not file.
+  //
+  // Soft on purpose. Emailing a code is normal and defensible, so it earns no
+  // cap; without completed-action the score already tops out at 60. What it
+  // changes is the sentence the owner reads.
+  const lastPerception = t.perceptions[t.perceptions.length - 1];
+  const verifySign = lastPerception ? VERIFY_SIGNS.find((s) => lastPage(lastPerception).includes(s)) : undefined;
+  if (verifySign && !t.declaredDone) {
+    blockers.push({
+      blocker: "verification-gate",
+      detail: `The flow stopped to ask for a code from an inbox or a phone ("${verifySign}"). An agent has neither, so the action ends here however good the rest of the site is.`,
     });
   }
 

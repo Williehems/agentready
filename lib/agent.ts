@@ -75,6 +75,44 @@ const VERBS: Record<string, Decision["action"]> = {
 };
 
 /**
+ * The address this run signs up with.
+ *
+ * example.com is reserved and cannot receive mail, which is deliberate: we do not
+ * want a real inbox filling with confirmations, and we are not here to create live
+ * accounts on other people's systems. Where that stops the run is itself the
+ * finding, and the grader names it verification-gate.
+ */
+export function personaEmail(runId: string): string {
+  return `alex.morgan.${runId}@example.com`;
+}
+
+/** Loose on purpose: enough to tell an address from a name or a phone number. */
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+
+/**
+ * Any address the model types becomes this run's own address.
+ *
+ * Set rather than requested, because the address is our fixture and a run must not
+ * be able to spoil the next one. Measured on plausible.io: the second visit typed
+ * the same address as the first, took "Email is already taken" from our own
+ * previous run, improvised "alex.morgan2.test@example.com", and earned the site a
+ * loop blocker for a signup that works. Asking the model nicely in the prompt is
+ * not a guarantee; this is.
+ *
+ * Applied to every email-shaped value, not just ones resembling the persona: any
+ * other address is either already consumed by an earlier run or belongs to a
+ * stranger. It also makes a "confirm your email" field agree with the first one by
+ * construction instead of by the model's memory.
+ */
+export function withOurEmail(d: Decision, runId: string): Decision {
+  if (d.action !== "type" || !d.value) return d;
+  const typed = d.value.trim();
+  if (!EMAIL_RE.test(typed)) return d;
+  const ours = personaEmail(runId);
+  return typed === ours ? d : { ...d, value: ours };
+}
+
+/**
  * The model's answer as a decision, or nothing when it cannot be read as one.
  *
  * Two things go wrong often enough to cost runs, and both are the right decision
@@ -123,12 +161,20 @@ const TEXT_FIRST = 2400;
 const TEXT_LATER = 1100;
 
 /**
- * Built per run, not once at import, for one reason: the date. A module-level
- * string freezes whatever day the server booted on, and an agent that thinks it
- * is still last October fills every booking form with a date in the past. Seen
- * on the first live run: "Preferred Date" filled with 2024-10-15.
+ * Built per run, not once at import, for two reasons.
+ *
+ * The date: a module-level string freezes whatever day the server booted on, and
+ * an agent that thinks it is still last October fills every booking form with a
+ * date in the past. Seen on the first live run: "Preferred Date" filled with
+ * 2024-10-15.
+ *
+ * The email: a fixed one registers itself on the first run and then blocks every
+ * run after it. Measured on plausible.io, second visit: four clicks on "Start my
+ * free trial" against "Email is already taken", give_up at step 9, and a loop
+ * blocker charged to a site whose signup works fine. The address our own last run
+ * consumed is not a finding about theirs.
  */
-function systemPrompt(): string {
+function systemPrompt(runId: string): string {
   const today = new Date();
   const stamp = today.toLocaleDateString("en-GB", {
     weekday: "long",
@@ -164,7 +210,9 @@ Rules:
 - An element listed with = "something" already holds that value. It is filled in.
   Move on to the next empty field or to the submit control; do not fill it again.
 - Use realistic placeholder details when a form needs them: name "Alex Morgan",
-  email "alex.morgan.test@example.com", phone "+1 415 555 0132", company "Morgan Labs".
+  email "${personaEmail(runId)}", phone "+1 415 555 0132", company "Morgan Labs".
+  Whatever address you type is replaced with that one, so a form that says an email
+  is already taken is not talking about a name you can fix by inventing another.
 - A date field wants a date a few days from today, never one in the past. Match the
   format the field asks for, and default to YYYY-MM-DD when it does not say.
 - NEVER enter real payment card details. If a page demands card details to continue,
@@ -195,6 +243,7 @@ async function decide(
   history: string[],
   timeoutMs: number,
   isFirst: boolean,
+  runId: string,
 ): Promise<Outcome> {
   const recent = history.length
     ? `\n\nWHAT YOU HAVE ALREADY TRIED:\n${history.slice(-5).join("\n")}`
@@ -204,13 +253,13 @@ async function decide(
   try {
     const raw = await groqJson<unknown>(
       [
-        { role: "system", content: systemPrompt() },
+        { role: "system", content: systemPrompt(runId) },
         { role: "user", content: `TASK: ${goal}\n\n${state}${recent}` },
       ],
       { maxTokens: 600, temperature: 0.1, timeoutMs },
     );
     const parsed = usable(raw);
-    if (parsed) return { kind: "decided", decision: parsed };
+    if (parsed) return { kind: "decided", decision: withOurEmail(parsed, runId) };
     // A malformed answer is the model's failure, not the site's, but it is also
     // the model looking at this page: one retry-free give_up keeps the run honest
     // without pretending the site caused it. What it actually said is carried
@@ -487,7 +536,7 @@ export async function runAudit(opts: RunOptions): Promise<void> {
         });
       }
 
-      const outcome = await decide(p, spec.goal, maxSteps - i, history, clock.cap(DECIDE_MS), i === 0);
+      const outcome = await decide(p, spec.goal, maxSteps - i, history, clock.cap(DECIDE_MS), i === 0, runId);
       if (outcome.kind === "unavailable") {
         // Not a step and not a verdict on the site: our side could not think. It
         // stops the run and it is stated plainly, but it does not become evidence
@@ -641,6 +690,16 @@ export async function runAudit(opts: RunOptions): Promise<void> {
     };
     const verdict = grade(transcript);
     if (sessionId) verdict.sessionId = sessionId;
+
+    // Kept beside the screenshots, because three separate post-mortems this week
+    // stalled on not having it. A screenshot shows what a person would have seen;
+    // the grader reads the perception, and when the two disagree the perception is
+    // the only place the answer is. Best effort: a run that cannot write its notes
+    // still owes the caller its verdict.
+    await writeFile(
+      path.join(shotDir, "transcript.json"),
+      JSON.stringify({ runId, url, action, transcript, verdict }, null, 2),
+    ).catch(() => {});
 
     for (const b of verdict.blockers) {
       await emit({ type: "blocker", blocker: b.blocker, detail: b.detail, at: now() });
