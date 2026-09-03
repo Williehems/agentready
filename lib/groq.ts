@@ -98,6 +98,117 @@ function retryAfterMs(body: string, headers: Headers): number | undefined {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+/**
+ * What one call cost, and what the key had left when it answered.
+ *
+ * Recorded because the free tier, not price, is what limits this product. Reading
+ * it off the response beats estimating: Groq reports the remaining balance on
+ * every call, and a governor working from that number never has to model a bucket
+ * it cannot see.
+ */
+export interface Usage {
+  promptTokens: number;
+  completionTokens: number;
+  remainingTokens?: number;
+  limitTokens?: number;
+  resetMs?: number;
+}
+
+/** "547ms", "1.5s" and "2m52.8s" are all shapes Groq writes. */
+export function durationMs(v: string | null): number | undefined {
+  if (!v) return undefined;
+  const unit: Record<string, number> = { ms: 1, s: 1000, m: 60_000, h: 3_600_000 };
+  let total = 0;
+  let seen = false;
+  // exec in a loop rather than matchAll, whose iterator this project's default
+  // compile target rejects without downlevelIteration.
+  const re = /([\d.]+)\s*(ms|s|m|h)/g;
+  for (let m = re.exec(v); m; m = re.exec(v)) {
+    const q = Number(m[1]);
+    if (!Number.isFinite(q)) continue;
+    seen = true;
+    total += q * unit[m[2]];
+  }
+  return seen ? total : undefined;
+}
+
+/** A header that is a number, or nothing. `Number(null)` is 0, which is a lie. */
+function num(v: string | null): number | undefined {
+  if (v === null || v.trim() === "") return undefined;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : undefined;
+}
+
+/**
+ * The token allowance as last reported, so the next call can wait instead of
+ * walking into a 429.
+ *
+ * Module scope. One machine runs one audit at a time in this build, and two
+ * concurrent runs on one key would both undercount; the fix for that is a queue,
+ * and there is nothing yet to queue. Stated rather than quietly assumed.
+ *
+ * Measured on this key: limit 8000, and after spending 73 tokens the reset came
+ * back as 547ms. So it refills continuously at limit/60s rather than emptying and
+ * clearing on a window boundary, which is why waiting a few seconds works at all.
+ */
+export interface Allowance {
+  remaining: number;
+  limit: number;
+  /** When `remaining` was read, so the refill since then can be added on. */
+  at: number;
+}
+
+let bucket: Allowance | undefined;
+
+const refillPerMs = (limit: number) => limit / 60_000;
+
+/**
+ * How long a call of this size must wait for the allowance to cover it, or 0 to
+ * go now.
+ *
+ * No reading means no wait: a fresh process knows nothing about the key and
+ * guessing a hold would delay every first call of the day for nothing. The first
+ * answer supplies the real number.
+ */
+export function holdMs(reserve: number, b: Allowance | undefined, now: number): number {
+  if (!b) return 0;
+  const rate = refillPerMs(b.limit);
+  const affordable = Math.min(b.limit, b.remaining + Math.max(0, now - b.at) * rate);
+  const short = reserve - affordable;
+  return short > 0 ? Math.ceil(short / rate) : 0;
+}
+
+/**
+ * What to set aside for one call: the prompt, plus whatever the answer may run to.
+ *
+ * Four characters to the token is the ordinary English ratio and it only has to be
+ * close, because the true balance is read back from Groq after every call. An
+ * estimate that is slightly off corrects itself on the next one. The floor matters
+ * more than the ratio: reasoning tokens are drawn from the same budget, so a call
+ * asking for 20 is really asking for MIN_TOKENS.
+ */
+export function reserveTokens(messages: ChatMessage[], maxTokens: number): number {
+  const chars = messages.reduce((n, m) => n + m.content.length, 0);
+  return Math.ceil(chars / 4) + Math.max(maxTokens, MIN_TOKENS);
+}
+
+/** Both a 200 and a 429 carry the allowance headers, so both are worth reading. */
+function readBucket(headers: Headers): Usage {
+  const limitTokens = num(headers.get("x-ratelimit-limit-tokens"));
+  const remainingTokens = num(headers.get("x-ratelimit-remaining-tokens"));
+  if (limitTokens !== undefined && remainingTokens !== undefined) {
+    bucket = { remaining: remainingTokens, limit: limitTokens, at: Date.now() };
+  }
+  return {
+    promptTokens: 0,
+    completionTokens: 0,
+    limitTokens,
+    remainingTokens,
+    resetMs: durationMs(headers.get("x-ratelimit-reset-tokens")),
+  };
+}
+
+
 export interface ChatMessage {
   role: "system" | "user" | "assistant";
   content: string;
@@ -109,6 +220,10 @@ export interface ChatOptions {
   json?: boolean;
   signal?: AbortSignal;
   timeoutMs?: number;
+  /** Called once per answered call, so a run can record what it spent. */
+  onUsage?: (u: Usage) => void;
+  /** Called when the governor holds a call back, so the pause is visible. */
+  onWait?: (ms: number, why: string) => void;
 }
 
 /** A refusal that is about our account, not about the caller's request. */
@@ -133,6 +248,8 @@ export async function groqChat(
     json = false,
     signal,
     timeoutMs = TIMEOUT_MS,
+    onUsage,
+    onWait,
   }: ChatOptions = {},
 ): Promise<string> {
   const key = process.env.GROQ_API_KEY;
@@ -145,9 +262,28 @@ export async function groqChat(
   /** Counted apart, because a network blip must not spend the rate-limit budget. */
   let rateAttempt = 1;
   let transportRetries = 0;
+  const reserve = reserveTokens(messages, maxTokens);
 
   for (;;) {
     try {
+      // Wait for the allowance rather than walking into a 429. The refusal costs
+      // the same wait plus a wasted round trip, and on the free tier it is the
+      // commonest way a run dies for a reason the audited site did not cause:
+      // measured on this key, "Limit 8000, Used 7492" and a 429 on the seventh
+      // decision of a six-step run.
+      const waitMs = holdMs(reserve, bucket, Date.now());
+      if (waitMs > 0) {
+        const spare = timeoutMs - (Date.now() - started);
+        if (waitMs + 1500 >= spare) {
+          throw new RateLimitedError(
+            waitMs,
+            `${reserve} tokens needs ${Math.round(waitMs / 1000)}s of allowance, longer than this call can spare`,
+          );
+        }
+        onWait?.(waitMs, `holding ${Math.round(waitMs / 1000)}s for the token allowance`);
+        await sleep(waitMs);
+      }
+
       const res = await fetch(GROQ_URL, {
         method: "POST",
         headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
@@ -164,6 +300,7 @@ export async function groqChat(
 
       if (res.status === 429) {
         const text = await res.text();
+        readBucket(res.headers);
         const waitMs = retryAfterMs(text, res.headers);
         const spare = timeoutMs - (Date.now() - started);
         if (rateAttempt >= RETRY_LIMIT) {
@@ -184,7 +321,16 @@ export async function groqChat(
       if (!res.ok) {
         throw new Error(`Groq error ${res.status}: ${await res.text()}`);
       }
-      const body = (await res.json()) as { choices?: { message?: { content?: string } }[] };
+      const spend = readBucket(res.headers);
+      const body = (await res.json()) as {
+        choices?: { message?: { content?: string } }[];
+        usage?: { prompt_tokens?: number; completion_tokens?: number };
+      };
+      onUsage?.({
+        ...spend,
+        promptTokens: body.usage?.prompt_tokens ?? 0,
+        completionTokens: body.usage?.completion_tokens ?? 0,
+      });
       const content = body.choices?.[0]?.message?.content;
       if (!content) throw new Error("Groq returned no content");
       return content.trim();

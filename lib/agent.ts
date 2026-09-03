@@ -3,7 +3,7 @@ import path from "node:path";
 import { z } from "zod";
 import { ACTIONS, handoffLabel, isDeadEndHref } from "./actions";
 import { Deadline, TimeoutError, withTimeout } from "./deadline";
-import { groqJson } from "./groq";
+import { groqJson, type ChatOptions } from "./groq";
 import { type AgentPage, perceive, renderState } from "./perceive";
 import { grade, type Transcript } from "./grade";
 import { closeClient, launchBrowser, releaseSession } from "./solari";
@@ -241,6 +241,15 @@ interface RunOptions {
   onEvent: (e: RunEvent) => void | Promise<void>;
 }
 
+/**
+ * What a decision cost, and any pause the free-tier governor imposed to afford it.
+ *
+ * Passed down rather than logged inside the client, because the run is the thing
+ * that knows how to make a pause visible: a held call looks exactly like a stalled
+ * one in a replay, and the difference is our own account, not the audited site.
+ */
+type Meter = Pick<ChatOptions, "onUsage" | "onWait">;
+
 async function decide(
   p: Perception,
   goal: string,
@@ -249,6 +258,7 @@ async function decide(
   timeoutMs: number,
   isFirst: boolean,
   runId: string,
+  meter: Meter = {},
 ): Promise<Outcome> {
   const recent = history.length
     ? `\n\nWHAT YOU HAVE ALREADY TRIED:\n${history.slice(-5).join("\n")}`
@@ -261,7 +271,7 @@ async function decide(
         { role: "system", content: systemPrompt(runId) },
         { role: "user", content: `TASK: ${goal}\n\n${state}${recent}` },
       ],
-      { maxTokens: 600, temperature: 0.1, timeoutMs },
+      { maxTokens: 600, temperature: 0.1, timeoutMs, ...meter },
     );
     const parsed = usable(raw);
     if (parsed) return { kind: "decided", decision: withOurEmail(parsed, runId) };
@@ -419,6 +429,43 @@ export async function runAudit(opts: RunOptions): Promise<void> {
   let launched: Awaited<ReturnType<typeof launchBrowser>> | undefined;
 
   /**
+   * What this run cost the model, and what the key had left when it last answered.
+   *
+   * Recorded because the free tier is what limits this product, so the number that
+   * decides whether an audit can run at all should be in the notes of every run
+   * rather than estimated afterwards from step counts. `remaining` and `limit` are
+   * as of the last answered call, which is the only reading Groq gives us.
+   */
+  const spend = {
+    calls: 0,
+    promptTokens: 0,
+    completionTokens: 0,
+    heldMs: 0,
+    remainingTokens: undefined as number | undefined,
+    limitTokens: undefined as number | undefined,
+  };
+
+  /**
+   * A held call and a stalled one look identical in a replay, and the difference is
+   * whose fault it is: a hold is our free tier, not the audited site. Said out loud
+   * so a viewer waiting fifteen seconds knows nothing is broken, and so a reader of
+   * the transcript can tell a slow site from a throttled agent.
+   */
+  const meter: Meter = {
+    onUsage: (u) => {
+      spend.calls++;
+      spend.promptTokens += u.promptTokens;
+      spend.completionTokens += u.completionTokens;
+      if (u.remainingTokens !== undefined) spend.remainingTokens = u.remainingTokens;
+      if (u.limitTokens !== undefined) spend.limitTokens = u.limitTokens;
+    },
+    onWait: (ms, why) => {
+      spend.heldMs += ms;
+      void emit({ type: "status", message: `Our own rate limit: ${why}`, at: now() });
+    },
+  };
+
+  /**
    * Tabs the site opened for itself, and the URLs they settled on.
    *
    * Kept apart because a popup's URL is not there when it opens: measured, the
@@ -552,7 +599,16 @@ export async function runAudit(opts: RunOptions): Promise<void> {
         });
       }
 
-      const outcome = await decide(p, spec.goal, maxSteps - i, history, clock.cap(DECIDE_MS), i === 0, runId);
+      const outcome = await decide(
+        p,
+        spec.goal,
+        maxSteps - i,
+        history,
+        clock.cap(DECIDE_MS),
+        i === 0,
+        runId,
+        meter,
+      );
       if (outcome.kind === "unavailable") {
         // Not a step and not a verdict on the site: our side could not think. It
         // stops the run and it is stated plainly, but it does not become evidence
@@ -712,9 +768,13 @@ export async function runAudit(opts: RunOptions): Promise<void> {
     // the grader reads the perception, and when the two disagree the perception is
     // the only place the answer is. Best effort: a run that cannot write its notes
     // still owes the caller its verdict.
+    //
+    // `spend` sits outside the transcript rather than in it, so that grading cannot
+    // reach what our account cost. What we paid to look at a site must never move
+    // that site's grade.
     await writeFile(
       path.join(shotDir, "transcript.json"),
-      JSON.stringify({ runId, url, action, transcript, verdict }, null, 2),
+      JSON.stringify({ runId, url, action, spend, transcript, verdict }, null, 2),
     ).catch(() => {});
 
     for (const b of verdict.blockers) {
