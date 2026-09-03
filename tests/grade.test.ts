@@ -37,6 +37,10 @@ function transcript(over: Partial<Transcript> = {}): Transcript {
     failures: [],
     stepCount: 1,
     stealth: true,
+    // What a run starting at the front page produces: it looked there, and there
+    // was no price. Absent instead means the front page was never checked, which
+    // grade() treats as no answer rather than as no price.
+    priceOnHome: false,
     ...over,
   };
 }
@@ -254,6 +258,43 @@ describe("grade: the soft findings", () => {
     for (const action of ["integrate", "book", "contact"] as ActionKind[]) {
       assert.ok(!blockers(transcript({ action })).includes("no-structured-price"), action);
     }
+  });
+
+  /**
+   * Where the audit was pointed must not move the grade.
+   *
+   * Measured twice on plausible.io: from the home page it earned found-key-info and
+   * scored C 55, from /register it was charged no-structured-price and scored D 40.
+   * Same site, same published prices in euros, 15 points apart on a URL we chose.
+   */
+  describe("a price the flow never passed", () => {
+    const offPath = { startUrl: "https://example.com/register" };
+
+    it("charges nothing when the front page could not be read", () => {
+      // Undefined is "we could not look", and a site is never charged for that.
+      const t = transcript({ ...offPath, priceOnHome: undefined });
+      assert.ok(!blockers(t).includes("no-structured-price"));
+    });
+
+    it("charges the site once the front page has answered without one", () => {
+      const t = transcript({ ...offPath, priceOnHome: false });
+      assert.ok(blockers(t).includes("no-structured-price"));
+    });
+
+    it("credits a price found on the front page as key info the site published", () => {
+      const t = transcript({ ...offPath, priceOnHome: true });
+      const v = grade(t);
+      assert.ok(!v.blockers.some((b) => b.blocker === "no-structured-price"));
+      assert.ok(v.milestones.includes("found-key-info"));
+    });
+
+    it("closes the gap between the two start URLs", () => {
+      // The 15 points that made the same site a C and a D.
+      const fromHome = grade(transcript({ perceptions: [page({ hasPrice: true })] }));
+      const fromForm = grade(transcript({ ...offPath, priceOnHome: true }));
+      assert.equal(fromForm.score, fromHome.score);
+      assert.equal(fromForm.grade, fromHome.grade);
+    });
   });
 
   it("flags an auth gate only when the run did not finish anyway", () => {

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { act, personaEmail, usable, withOurEmail } from "../lib/agent";
+import { act, frontPage, personaEmail, usable, withOurEmail } from "../lib/agent";
 import type { Perception } from "../lib/types";
 
 describe("usable: reading the model's answer", () => {
@@ -111,6 +111,43 @@ describe("withOurEmail: the run owns its address", () => {
     for (const d of untouched) {
       assert.equal(withOurEmail(d, runId), d, JSON.stringify(d));
     }
+  });
+});
+
+/**
+ * Which page to ask about a price when the flow never passed one, and when the run
+ * has already been there and need not ask twice.
+ */
+describe("frontPage: the page a site puts its prices on", () => {
+  it("finds the front page from anywhere inside the site", () => {
+    for (const from of [
+      "https://plausible.io/register",
+      "https://plausible.io/docs/integrate#step-2",
+      "https://plausible.io/a/b/c/",
+    ]) {
+      assert.deepEqual(frontPage(from), { home: "https://plausible.io/", alreadyThere: false }, from);
+    }
+  });
+
+  it("knows when the run already started there, so nothing is spent", () => {
+    assert.deepEqual(frontPage("https://plausible.io/"), {
+      home: "https://plausible.io/",
+      alreadyThere: true,
+    });
+    assert.equal(frontPage("https://plausible.io").alreadyThere, true);
+    assert.equal(frontPage("https://plausible.io/#pricing").alreadyThere, true);
+  });
+
+  it("treats a query string as somewhere else, because that is how a landing page is addressed", () => {
+    assert.equal(frontPage("https://plausible.io/?ref=hn").alreadyThere, false);
+  });
+
+  it("keeps the port and the scheme, which are part of which site this is", () => {
+    assert.equal(frontPage("http://localhost:3007/checkout").home, "http://localhost:3007/");
+  });
+
+  it("says nothing rather than guessing when the URL will not parse", () => {
+    assert.deepEqual(frontPage("not a url"), { alreadyThere: false });
   });
 });
 

@@ -4,7 +4,7 @@ import { z } from "zod";
 import { ACTIONS, handoffLabel, isDeadEndHref } from "./actions";
 import { Deadline, TimeoutError, withTimeout } from "./deadline";
 import { groqJson, type ChatOptions } from "./groq";
-import { type AgentPage, perceive, renderState } from "./perceive";
+import { type AgentPage, looksPriced, perceive, renderState } from "./perceive";
 import { grade, type Transcript } from "./grade";
 import { closeClient, launchBrowser, releaseSession } from "./solari";
 import type { ActionKind, Perception, RunEvent, StepAction } from "./types";
@@ -399,6 +399,57 @@ export async function act(page: ActPage, p: Perception, d: Decision): Promise<st
   return undefined;
 }
 
+/** How long to spend on the front page once the flow is over. One nav, no more. */
+const PRICE_CHECK_MS = 12_000;
+
+/**
+ * The site's front page as seen from the URL we were handed, and whether the run
+ * already began there.
+ *
+ * A query string counts as somewhere else even on "/", since that is how a landing
+ * page or a filtered view is addressed.
+ */
+export function frontPage(startUrl: string): { home?: string; alreadyThere: boolean } {
+  try {
+    const u = new URL(startUrl);
+    return { home: `${u.origin}/`, alreadyThere: u.pathname === "/" && !u.search };
+  } catch {
+    return { alreadyThere: false };
+  }
+}
+
+/**
+ * Does the site's front page publish a price a machine can read?
+ *
+ * Asked only when the flow never passed one, and asked after the flow has ended so
+ * it cannot disturb it. Costs one navigation on a browser already paid for and no
+ * model tokens at all, which is why it is worth doing rather than living with a
+ * finding that depends on the URL we were handed.
+ *
+ * Undefined when the page could not be read. The caller turns that into silence
+ * rather than a finding, so an unreachable front page is never scored as a site
+ * without prices.
+ */
+async function priceOnFrontPage(
+  page: ActPage,
+  home: string,
+): Promise<boolean | undefined> {
+  try {
+    await page.goto(home, { timeout: PRICE_CHECK_MS, waitUntil: "domcontentloaded" });
+    await page.waitForTimeout(1200);
+    // evaluate takes no timeout of its own, and a wedged main thread never answers
+    // it. A clock here, or one stuck front page holds the verdict hostage.
+    const text = await withTimeout(
+      page.evaluate<string>(() => (document.body ? document.body.innerText : "")),
+      5_000,
+      "the front page",
+    );
+    return looksPriced(text);
+  } catch {
+    return undefined;
+  }
+}
+
 /**
  * The run. Every meaningful moment is pushed through `onEvent` as it happens,
  * because the point of the product is watching the agent struggle in real time,
@@ -427,6 +478,14 @@ export async function runAudit(opts: RunOptions): Promise<void> {
   /** Set when the run ended for a reason of ours rather than the site's. */
   let abandoned: string | undefined;
   let launched: Awaited<ReturnType<typeof launchBrowser>> | undefined;
+  /**
+   * The tab the flow ran in, kept where the block that ends the run can reach it.
+   *
+   * There is one question left to ask a page after the flow is over, and it has to
+   * be asked from whatever end the run came to: normally, on a break, or on a
+   * throw. That is what the alias buys.
+   */
+  let flowTab: ActPage | undefined;
 
   /**
    * What this run cost the model, and what the key had left when it last answered.
@@ -540,6 +599,7 @@ export async function runAudit(opts: RunOptions): Promise<void> {
       30_000,
       "opening a tab",
     )) as unknown as ActPage;
+    flowTab = page;
     await page.setViewportSize({ width: 1280, height: 800 }).catch(() => {});
     try {
       page.context().on("page", (tab) => opened.push(tab));
@@ -719,6 +779,38 @@ export async function runAudit(opts: RunOptions): Promise<void> {
     // and that action is the submit: the one most likely to hand off.
     await reportTabs().catch(() => {});
 
+    // Where the audit was pointed must not move the grade. Measured twice on
+    // plausible.io: from the home page it earned found-key-info and scored C 55,
+    // and from /register it was charged no-structured-price and scored D 40. Same
+    // site, same published prices, 15 points apart because of a URL we chose.
+    //
+    // So the front page is asked directly, but only when the flow never passed a
+    // price, only once the flow is over, and never on a run whose clock has already
+    // run out. A run that started at the front page has its answer already and
+    // spends nothing here.
+    let priceOnHome: boolean | undefined;
+    if (perceptions.length && !perceptions.some((p) => p.hasPrice)) {
+      const { home, alreadyThere } = frontPage(url);
+      if (alreadyThere) {
+        // Already looked, and found nothing. That is an answer, not a gap.
+        priceOnHome = false;
+      } else if (home && flowTab && !clock.expired) {
+        await emit({
+          type: "status",
+          message: `The flow never passed a price, so checking the front page for one: ${home}`,
+          at: now(),
+        });
+        priceOnHome = await priceOnFrontPage(flowTab, home);
+        if (priceOnHome === undefined) {
+          await emit({
+            type: "status",
+            message: "The front page did not answer, so no price finding is filed either way",
+            at: now(),
+          });
+        }
+      }
+    }
+
     // Order matters: release the session first, because the recording is only
     // uploaded once released, and close the client last, because nothing else
     // can talk to Solari afterwards and the process will not exit without it.
@@ -758,6 +850,7 @@ export async function runAudit(opts: RunOptions): Promise<void> {
       stepCount,
       stealth: launched?.stealth ?? false,
       abandoned,
+      priceOnHome,
       handoffs: Array.from(handoffs),
     };
     const verdict = grade(transcript);

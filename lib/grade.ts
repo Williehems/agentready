@@ -42,6 +42,23 @@ export interface Transcript {
    */
   handoffs?: string[];
   /**
+   * Whether the site's front page shows a price as selectable text, or nothing
+   * when we could not look.
+   *
+   * The audit starts wherever the caller points it, and where it starts must not
+   * move the grade. Measured twice on plausible.io: from the home page it earned
+   * found-key-info and scored C 55, and from /register it was charged
+   * no-structured-price and scored D 40. Same site, same published prices in
+   * euros, 15 points apart because of a URL we chose. So when the flow never
+   * passes a price, the front page is asked directly once the flow is over.
+   *
+   * Three states, all meaningful. True or false is an answer we obtained.
+   * Undefined means the check could not run, and then no price blocker is filed
+   * at all: charging a site for what we were unable to see is the one kind of
+   * wrong finding this cannot afford.
+   */
+  priceOnHome?: boolean;
+  /**
    * Set when the run ended for a reason of ours, not the site's: our model quota,
    * our timeout, our budget. It never adds a blocker and never caps the score,
    * because the site did not do it. It does say so in the summary, since a grade
@@ -254,10 +271,18 @@ export function grade(t: Transcript): Verdict {
   // Guarded on having looked at all: with no perception the price test is
   // vacuously true, and a run that never loaded the page would be charged for a
   // missing price it was never in a position to see.
+  //
+  // `priceChecked` is the other half of that guard, one step further out. A flow
+  // that never passed a price is not evidence of a site without prices, so the
+  // front page is asked after the fact; only a front page that answered turns
+  // silence into a finding.
+  const priceSeen = t.perceptions.some((p) => p.hasPrice) || t.priceOnHome === true;
+  const priceChecked = t.perceptions.some((p) => p.hasPrice) || t.priceOnHome !== undefined;
   if (
     firstPerception &&
     (t.action === "purchase" || t.action === "signup") &&
-    !t.perceptions.some((p) => p.hasPrice)
+    priceChecked &&
+    !priceSeen
   ) {
     blockers.push({
       blocker: "no-structured-price",
@@ -313,9 +338,11 @@ export function grade(t: Transcript): Verdict {
   if (firstPerception && !alwaysGated && text.replace(/\s+/g, " ").length > 400) {
     milestones.push("understood-offering");
   }
-  // Found the key info this action depends on.
+  // Found the key info this action depends on. The price half reads `priceSeen`
+  // rather than the perceptions alone, so that a site which publishes its prices
+  // is credited for them whether or not the URL we picked happened to pass one.
   if (
-    t.perceptions.some((p) => p.hasPrice) ||
+    priceSeen ||
     (t.action === "integrate" && /```|curl |api key|npm install|pip install/.test(text)) ||
     (t.action === "contact" && /@|contact/.test(text) && !cta.deadEndOnly && !handoff) ||
     (t.action === "book" && /\b(mon|tue|wed|thu|fri|sat|sun)\w*\b|\bam\b|\bpm\b|available/.test(text))

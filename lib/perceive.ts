@@ -177,6 +177,16 @@ const PRICE_RE =
   /(?:[$€£¥₦]|\bNGN\b|\bUSD\b|\bEUR\b|\bGBP\b|\bRs\.?)\s?\d[\d,.]*|\d[\d,.]*\s?(?:USD|EUR|GBP|NGN)\b/i;
 
 /**
+ * Does this text carry a price a machine could read?
+ *
+ * Exported so the run can ask the same question of a page it did not walk through.
+ * One definition of a price, used everywhere, or the answer depends on who asked.
+ */
+export function looksPriced(text: string): boolean {
+  return PRICE_RE.test(text);
+}
+
+/**
  * One outline line: indent, "- ", a role, an optional quoted accessible name,
  * any number of [flag] or [flag=value] brackets, then an optional ": text" tail.
  * The quoted group is matched before the brackets, which is what stops a name
@@ -469,7 +479,7 @@ export async function perceive(page: AgentPage, timeoutMs = PERCEIVE_MS): Promis
     // slider reads in euros and the run was charged no-structured-price anyway,
     // because our own truncation cut the page off above it. Charging a site for
     // what our trimming hid is the one kind of wrong finding this cannot afford.
-    hasPrice: PRICE_RE.test(rawText),
+    hasPrice: looksPriced(rawText),
   };
 }
 
