@@ -116,13 +116,33 @@ const MODAL = new Set(["dialog", "alertdialog"]);
  * `display: none` and `visibility: hidden` do drop out of the tree, so it is the
  * rest that matter here.
  *
- * Covering means it takes pointer events and either declares itself modal or
- * fills most of the viewport: a visible chat widget with `role="dialog"` traps
- * nothing and must not shrink the page to itself.
+ * Covering means it takes pointer events and one of three things is true: it
+ * declares itself modal, it fills most of the viewport, or it owns the middle of
+ * the screen. A visible chat widget with `role="dialog"` traps nothing and must
+ * not shrink the page to itself.
  *
- * Runs in the page, so it closes over nothing.
+ * The third test is there because the first two both missed a real trap. Measured
+ * on resend.com/docs/api-reference/api-keys/create-api-key, on the Mintlify search
+ * palette our own agent opened at step 1: `role="dialog"`, no `aria-modal`, and a
+ * box of 640x62 in a 1280x720 viewport, which is 4% of it. So sixty elements were
+ * offered at every step afterwards and three clicks in a row were intercepted by
+ * `<div> "Ask AssistantUse the up and down arrow k"`, ten seconds each.
+ *
+ * What was actually covering the page was not the dialog but the layer holding it:
+ * a `role="presentation"` div, `position: fixed`, inset to all four edges, taking
+ * pointer events, containing the dialog, with a second one behind it painting the
+ * page out at 40% black. The middle of the screen hit-tested to that layer. The
+ * aria snapshot did carry `dialog "Search or ask a question..."` all along, so
+ * `reachable` could have found it from the first step; only this test was missing.
+ *
+ * Asking `elementFromPoint` is the same question the browser itself answers when
+ * it decides where a click goes, which is the only question that matters here.
+ *
+ * Runs in the page, so it closes over nothing, and holds no named inner function:
+ * esbuild's keep-names wraps those in a `__name()` helper that does not exist
+ * inside the page, and the whole probe dies with `__name is not defined`.
  */
-function modalIsOpen(): boolean {
+export function modalIsOpen(): boolean {
   const candidates = document.querySelectorAll(
     'dialog[open], [aria-modal="true"], [role="dialog"], [role="alertdialog"]',
   );
@@ -147,9 +167,30 @@ function modalIsOpen(): boolean {
     const box = el.getBoundingClientRect();
     if (box.width < 1 || box.height < 1) continue;
 
-    if (el.getAttribute("aria-modal") === "true") return true;
     const viewport = window.innerWidth * window.innerHeight;
-    if (viewport > 0 && (box.width * box.height) / viewport >= 0.55) return true;
+    if (viewport <= 0) continue;
+
+    if (el.getAttribute("aria-modal") === "true") return true;
+    if ((box.width * box.height) / viewport >= 0.55) return true;
+
+    // Whatever the browser would hand a click aimed at the centre of the page.
+    const top = document.elementFromPoint(window.innerWidth / 2, window.innerHeight / 2);
+    if (!top) continue;
+
+    // Inside the dialog: it is between the visitor and the page at the most
+    // central point there is, whatever its size.
+    if (el.contains(top)) return true;
+
+    // Otherwise it has to be the layer the dialog lives in, positioned out of the
+    // flow and covering the page. A backdrop is inset to all four edges by
+    // construction, so the bar is high; the margin is for a scrollbar. An ordinary
+    // page wrapper that happens to be hit at the centre fails both of these, and a
+    // dialog somewhere off to the side is not in this chain at all.
+    if (!top.contains(el)) continue;
+    const layer = getComputedStyle(top);
+    if (layer.position !== "fixed" && layer.position !== "absolute") continue;
+    const over = top.getBoundingClientRect();
+    if ((over.width * over.height) / viewport >= 0.9) return true;
   }
 
   return false;

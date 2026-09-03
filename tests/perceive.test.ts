@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { parseAriaSnapshot, renderState } from "../lib/perceive";
+import { modalIsOpen, parseAriaSnapshot, renderState } from "../lib/perceive";
 import type { Perception } from "../lib/types";
 
 /**
@@ -444,6 +444,144 @@ describe("parseAriaSnapshot: an open modal", () => {
     assert.equal(parseAriaSnapshot(plain, true).length, 2);
   });
 });
+
+/**
+ * Which dialogs count as covering the page.
+ *
+ * This runs in the browser, so what follows is a stand-in DOM: it answers the six
+ * questions the rule asks and nothing else. The live proof is a run against
+ * resend.com/docs, whose search palette these numbers are taken from. What this
+ * pins is the rule itself, including the three shapes it must NOT fire on, since
+ * a false positive here shrinks a working page to a chat bubble.
+ */
+describe("modalIsOpen: what counts as covering the page", () => {
+  type Style = "pointerEvents" | "display" | "visibility" | "opacity" | "position";
+
+  /** The smallest node that can answer those questions. */
+  interface N {
+    attrs: Record<string, string>;
+    style: Partial<Record<Style, string>>;
+    size: { width: number; height: number };
+    parentElement: N | null;
+    getAttribute(name: string): string | null;
+    getBoundingClientRect(): { width: number; height: number };
+    contains(other: unknown): boolean;
+  }
+
+  const node = (over: Partial<Pick<N, "attrs" | "style" | "size" | "parentElement">> = {}): N => {
+    const self: N = {
+      attrs: over.attrs ?? {},
+      style: over.style ?? {},
+      size: over.size ?? { width: 100, height: 40 },
+      parentElement: over.parentElement ?? null,
+      getAttribute: (name) => self.attrs[name] ?? null,
+      getBoundingClientRect: () => self.size,
+      contains: (other) => {
+        for (let n = other as N | null; n; n = n.parentElement) if (n === self) return true;
+        return false;
+      },
+    };
+    return self;
+  };
+
+  const VIEWPORT = { width: 1280, height: 720 };
+
+  /** Put the stand-in in place, ask the real rule, put the globals back. */
+  const ask = (candidates: N[], centre: N | null): boolean => {
+    const g = globalThis as { document?: unknown; window?: unknown; getComputedStyle?: unknown };
+    const had = { document: g.document, window: g.window, getComputedStyle: g.getComputedStyle };
+    Object.assign(globalThis, {
+      document: { querySelectorAll: () => candidates, elementFromPoint: () => centre },
+      window: { innerWidth: VIEWPORT.width, innerHeight: VIEWPORT.height },
+      getComputedStyle: (n: N) => ({
+        pointerEvents: "auto",
+        display: "block",
+        visibility: "visible",
+        opacity: "1",
+        position: "static",
+        ...n.style,
+      }),
+    });
+    try {
+      return modalIsOpen();
+    } finally {
+      Object.assign(globalThis, had);
+    }
+  };
+  /**
+   * The measured shape. resend.com/docs, search palette open: a `role="dialog"` of
+   * 640x62 in a 1280x720 viewport, so 4% of it and no `aria-modal` anywhere, sitting
+   * inside a `role="presentation"` div that is fixed, inset to all four edges, and
+   * takes pointer events. The centre of the screen hit-tests to that layer.
+   */
+  const palette = (layer: Partial<Record<Style, string>>, size = VIEWPORT) => {
+    const holder = node({ attrs: { role: "presentation" }, style: layer, size });
+    return {
+      layer: holder,
+      dialog: node({
+        attrs: { role: "dialog" },
+        size: { width: 640, height: 62 },
+        parentElement: holder,
+      }),
+    };
+  };
+
+  it("counts the layer a small dialog is painted into, which is what eats the clicks", () => {
+    const p = palette({ position: "fixed" });
+    assert.equal(ask([p.dialog], p.layer), true);
+  });
+
+  it("does not count an ordinary wrapper that happens to be under the centre", () => {
+    const p = palette({ position: "static" });
+    assert.equal(ask([p.dialog], p.layer), false);
+  });
+
+  it("does not count a positioned layer that leaves most of the page reachable", () => {
+    const p = palette({ position: "fixed" }, { width: 1280, height: 360 });
+    assert.equal(ask([p.dialog], p.layer), false);
+  });
+
+  it("counts a dialog the centre lands inside, whatever its size", () => {
+    const dialog = node({ attrs: { role: "dialog" }, size: { width: 400, height: 300 } });
+    assert.equal(ask([dialog], node({ parentElement: dialog })), true);
+  });
+
+  it("leaves a chat bubble alone: the page behind it is still there to be used", () => {
+    const bubble = node({ attrs: { role: "dialog" }, size: { width: 380, height: 520 } });
+    assert.equal(ask([bubble], node({ style: { position: "static" } })), false);
+  });
+
+  it("still takes a dialog at its word when it declares itself modal", () => {
+    const tiny = node({ attrs: { role: "dialog", "aria-modal": "true" }, size: { width: 30, height: 20 } });
+    assert.equal(ask([tiny], node()), true);
+  });
+
+  it("still counts one that fills most of the viewport on its own", () => {
+    const big = node({ attrs: { role: "dialog" }, size: { width: 800, height: 700 } });
+    assert.equal(ask([big], node()), true);
+  });
+
+  it("ignores an overlay that takes no pointer events, however large", () => {
+    const closed = node({
+      attrs: { role: "dialog", "aria-modal": "true" },
+      style: { pointerEvents: "none" },
+      size: VIEWPORT,
+    });
+    assert.equal(ask([closed], closed), false);
+  });
+
+  it("ignores one its wrapper has faded out", () => {
+    const faded = node({ style: { opacity: "0" } });
+    const inner = node({ attrs: { role: "dialog", "aria-modal": "true" }, size: VIEWPORT, parentElement: faded });
+    assert.equal(ask([inner], inner), false);
+  });
+
+  it("says no when nothing at all is at the centre", () => {
+    const p = palette({ position: "fixed" });
+    assert.equal(ask([p.dialog], null), false);
+  });
+});
+
 
 describe("renderState", () => {
   function perception(over: Partial<Perception> = {}): Perception {
