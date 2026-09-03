@@ -2,14 +2,69 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Two products in one: a daylight one and a night one. Every colour below is an
+   unwrapped channel triple so Tailwind can still write `bg-ink/60`, and so the
+   whole palette turns over on one class on <html>.
+
+   Light is the day photograph: near-white paper, ink type, and grade colours
+   pushed darker because the dark-mode greens and ambers vanish on white. */
 :root {
+  color-scheme: light;
+
+  --ink: 246 247 249;
+  --surface: 255 255 255;
+  --raised: 240 242 245;
+  --line: 217 221 227;
+  --line-strong: 173 180 190;
+  --text: 16 18 22;
+  --muted: 79 85 94;
+  --dim: 118 124 133;
+
+  --grade-a: 21 128 61;
+  --grade-b: 77 124 15;
+  --grade-c: 180 83 9;
+  --grade-d: 194 65 12;
+  --grade-f: 185 28 28;
+
+  /* What the scrims are made of, and which sky sits behind them. */
+  --veil: 255 255 255;
+  --sky: url("/landing-day.webp");
+
+  /* Floating things need a shadow that belongs to the hour: a soft slate cast on
+     paper, a real black hole at night. */
+  --dock-shadow: 0 18px 40px -18px rgb(15 23 42 / 0.2);
+  --menu-shadow: 0 26px 60px -24px rgb(15 23 42 / 0.26);
+}
+
+.dark {
   color-scheme: dark;
+
+  --ink: 10 11 13;
+  --surface: 20 22 26;
+  --raised: 27 30 35;
+  --line: 36 39 44;
+  --line-strong: 58 61 66;
+  --text: 240 241 243;
+  --muted: 132 134 140;
+  --dim: 86 88 94;
+
+  --grade-a: 74 222 128;
+  --grade-b: 163 230 53;
+  --grade-c: 251 191 36;
+  --grade-d: 251 146 60;
+  --grade-f: 248 113 113;
+
+  --veil: 10 11 13;
+  --sky: url("/landing-night.webp");
+
+  --dock-shadow: 0 18px 40px -18px rgb(0 0 0 / 0.9);
+  --menu-shadow: 0 26px 60px -24px rgb(0 0 0 / 0.95);
 }
 
 html,
 body {
-  background-color: #0a0b0d;
-  color: #f0f1f3;
+  background-color: rgb(var(--ink));
+  color: rgb(var(--text));
 }
 
 body {
@@ -19,47 +74,150 @@ body {
 
 /* The landing page picture, carrying the whole first impression.
 
-   AI_Bg_071 from the backgrounds library, cropped to 16:9 off the top, mirrored
-   so its ember falls on the right, 1800w WebP at q68 (220 KB). Mirrored on
-   purpose: the glow was under the headline and the call to action, and a white
-   pill on a hot orange field is the one place on this page where the type would
-   have had to fight the image.
+   One scene, two hours of the day. Light mode is AI_Bg_064 from the backgrounds
+   library: a figure standing in tall grass under a sky raining glyphs, facing a
+   break of light, 1800w WebP at q66 (149 KB). Dark mode is the night companion of
+   the same frame, moon top right and the glyph rain turned to starlight, 1317w
+   WebP at q66 (61 KB).
 
-   It is a framed panel rather than a full-bleed wash. The source is almost black,
-   so behind the whole page it disappears under any scrim heavy enough to keep the
-   type crisp; inside an edge it reads as a chosen image. The left side is faded
-   into the page so the panel joins the layout instead of sitting on top of it. */
-.shot {
+   Full bleed in both, because these are photographs with a subject in them and a
+   subject cannot be a texture. The layout is arranged around it: type down the
+   left where the sky is empty, the figure left alone in the right half, the light
+   it is walking into never covered.
+
+   Two scrims and nothing else. One from the left, so type has something solid to
+   sit on; one from the top and bottom edges, for the header and the row of facts,
+   which would otherwise land in open sky and wet grass. Light mode carries the
+   heavier veil of the two: ink type needs near paper under it, and midday sky is
+   a long way from paper. */
+.field {
   position: relative;
   isolation: isolate;
-  overflow: hidden;
-  border-radius: 26px;
-  border: 1px solid #24272c;
 }
 
-.shot::before {
+.field::before {
   content: "";
-  position: absolute;
+  position: fixed;
   inset: 0;
-  /* Anchored low and right, where the ember lives. */
-  background-image: url("/landing.webp");
+  z-index: -2;
+  background-image: var(--sky);
   background-size: cover;
-  background-position: 68% 82%;
+  /* Right of centre: on a wide viewport this keeps the figure clear of the type,
+     and on a narrow one it keeps the figure in frame at all. */
+  background-position: 62% 42%;
 }
 
-.shot::after {
+.dark .field::before {
+  /* The moon lives in the top right of the night frame, so the night sky is
+     hung from its top edge: a cover crop on a wide viewport takes the bottom,
+     which is only grass, and the moon clears the header instead of sitting
+     under the toggle. */
+  background-position: 62% 0%;
+}
+
+.field::after {
   content: "";
-  position: absolute;
+  position: fixed;
   inset: 0;
+  z-index: -1;
   pointer-events: none;
   background:
     linear-gradient(
-      to right,
-      rgba(10, 11, 13, 0.72) 0%,
-      rgba(10, 11, 13, 0.24) 30%,
-      rgba(10, 11, 13, 0) 64%
+      95deg,
+      rgb(var(--veil) / 0.9) 0%,
+      rgb(var(--veil) / 0.78) 24%,
+      rgb(var(--veil) / 0.4) 50%,
+      rgb(var(--veil) / 0.06) 78%
     ),
-    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='0.1'/%3E%3C/svg%3E");
+    linear-gradient(
+      to bottom,
+      rgb(var(--veil) / 0.6) 0%,
+      rgb(var(--veil) / 0.06) 20%,
+      rgb(var(--veil) / 0.06) 56%,
+      rgb(var(--veil) / 0.78) 100%
+    ),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='0.08'/%3E%3C/svg%3E");
+}
+
+.dark .field::after {
+  background:
+    linear-gradient(
+      95deg,
+      rgb(var(--veil) / 0.84) 0%,
+      rgb(var(--veil) / 0.66) 24%,
+      rgb(var(--veil) / 0.24) 50%,
+      rgb(var(--veil) / 0.02) 76%
+    ),
+    linear-gradient(
+      to bottom,
+      rgb(var(--veil) / 0.5) 0%,
+      rgb(var(--veil) / 0) 20%,
+      rgb(var(--veil) / 0) 58%,
+      rgb(var(--veil) / 0.74) 100%
+    ),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='0.08'/%3E%3C/svg%3E");
+}
+
+/* Narrow viewports get the figure centred, since a portrait cover crop keeps only
+   about a quarter of the width and the default framing drops the figure out of the
+   picture entirely. The scrim becomes a single top-to-bottom wash here: the type
+   runs the full width, so it crosses the figure's lit robe instead of sitting
+   beside it, and that robe is the one bright thing in either picture. */
+@media (max-width: 640px) {
+  .field::before,
+  .dark .field::before {
+    background-position: 46% 18%;
+  }
+
+  .field::after,
+  .dark .field::after {
+    background:
+      linear-gradient(
+        to bottom,
+        rgb(var(--veil) / 0.84) 0%,
+        rgb(var(--veil) / 0.7) 20%,
+        rgb(var(--veil) / 0.74) 50%,
+        rgb(var(--veil) / 0.88) 74%,
+        rgb(var(--veil) / 0.96) 100%
+      ),
+      url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='0.08'/%3E%3C/svg%3E");
+  }
+
+  .dark .field::before {
+    background-position: 47% 50%;
+  }
+
+  .dark .field::after {
+    background:
+      linear-gradient(
+        to bottom,
+        rgb(var(--veil) / 0.82) 0%,
+        rgb(var(--veil) / 0.66) 20%,
+        rgb(var(--veil) / 0.7) 50%,
+        rgb(var(--veil) / 0.86) 74%,
+        rgb(var(--veil) / 0.95) 100%
+      ),
+      url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='0.08'/%3E%3C/svg%3E");
+  }
+}
+
+/* The eclipse. The incoming theme is a snapshot on top of the outgoing one, and
+   the toggle grows a circle out of itself to uncover it; the animation itself is
+   driven from the button, which is the only place that knows where the circle
+   starts. Browsers without view transitions simply swap, and so does anyone who
+   has asked for less motion. */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+
+::view-transition-old(root) {
+  z-index: 0;
+}
+
+::view-transition-new(root) {
+  z-index: 1;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -72,10 +230,39 @@ body {
   }
 }
 
+/* The button that drives the eclipse. Small on purpose: it is a switch, not a
+   feature, and it stands in a header next to the wordmark. */
+.theme-switch {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.9rem;
+  height: 1.9rem;
+  border-radius: 9999px;
+  border: 1px solid rgb(var(--line-strong) / 0.7);
+  background-color: rgb(var(--surface) / 0.4);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  color: rgb(var(--text) / 0.7);
+  transition:
+    color 140ms ease,
+    border-color 140ms ease;
+}
+
+.theme-switch:hover {
+  color: rgb(var(--text));
+  border-color: rgb(var(--line-strong));
+}
+
+.theme-switch:focus-visible {
+  outline: 1px solid rgb(var(--text));
+  outline-offset: 2px;
+}
+
 /* Hairline rule used throughout as the only structural decoration. */
 .rule {
   height: 1px;
-  background-color: #24272c;
+  background-color: rgb(var(--line));
 }
 
 /* ---------------------------------------------------------------------------
@@ -95,9 +282,16 @@ body {
   position: fixed;
   inset: 0;
   z-index: -2;
-  background-image: url("/landing.webp");
+  background-image: var(--sky);
   background-size: cover;
   background-position: 50% 45%;
+  /* Lighter in daylight: the day frame is bright enough that the same opacity
+     that reads as a temperature at night reads as a picture at noon. */
+  opacity: 0.12;
+  filter: saturate(0.7) blur(2px);
+}
+
+.dark .audit-texture::before {
   opacity: 0.2;
   filter: saturate(0.65) blur(2px);
 }
@@ -119,25 +313,27 @@ body {
   pointer-events: none;
   background: linear-gradient(
     to top,
-    #0a0b0d 16%,
-    rgba(10, 11, 13, 0.85) 52%,
-    rgba(10, 11, 13, 0) 100%
+    rgb(var(--ink)) 16%,
+    rgb(var(--ink) / 0.85) 52%,
+    rgb(var(--ink) / 0) 100%
   );
 }
 
+/* The floating things are glass: enough tint to hold their edge, thin enough
+   that the picture behind them still reads as a picture. */
 .dock-pill {
   min-height: 3.5rem;
   border-radius: 9999px;
-  border: 1px solid #3a3d42;
-  background-color: rgba(20, 22, 26, 0.78);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
-  box-shadow: 0 18px 40px -18px rgba(0, 0, 0, 0.9);
+  border: 1px solid rgb(var(--line-strong));
+  background-color: rgb(var(--surface) / 0.6);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  box-shadow: var(--dock-shadow);
   transition: border-color 140ms ease;
 }
 
 .dock-pill:focus-within {
-  border-color: #84868c;
+  border-color: rgb(var(--muted));
 }
 
 .dock-orb {
@@ -148,13 +344,13 @@ body {
   height: 3.5rem;
   padding: 0 1.25rem;
   border-radius: 9999px;
-  background-color: #f0f1f3;
-  color: #0a0b0d;
+  background-color: rgb(var(--text));
+  color: rgb(var(--ink));
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.16em;
   text-transform: uppercase;
-  box-shadow: 0 18px 40px -18px rgba(0, 0, 0, 0.95);
+  box-shadow: var(--dock-shadow);
   transition:
     transform 140ms ease,
     opacity 140ms ease;
@@ -172,30 +368,34 @@ body {
   overflow: hidden;
   padding-bottom: 0.375rem;
   border-radius: 22px;
-  border: 1px solid #3a3d42;
-  background-color: rgba(20, 22, 26, 0.93);
-  backdrop-filter: blur(18px);
-  -webkit-backdrop-filter: blur(18px);
-  box-shadow: 0 26px 60px -24px rgba(0, 0, 0, 0.95);
+  border: 1px solid rgb(var(--line-strong));
+  background-color: rgb(var(--surface) / 0.86);
+  backdrop-filter: blur(22px);
+  -webkit-backdrop-filter: blur(22px);
+  box-shadow: var(--menu-shadow);
 }
 
 /* One corner left square on each, which is the whole of the chat metaphor here. */
 .bubble-agent {
   padding: 0.875rem 1rem;
   border-radius: 20px 20px 20px 6px;
-  border: 1px solid #24272c;
-  background-color: rgba(20, 22, 26, 0.72);
+  border: 1px solid rgb(var(--line));
+  background-color: rgb(var(--surface) / 0.58);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
 }
 
 .bubble-you {
   max-width: min(24rem, 100%);
   padding: 0.625rem 0.9rem;
   border-radius: 20px 20px 6px 20px;
-  border: 1px solid #24272c;
-  background-color: #1b1e23;
+  border: 1px solid rgb(var(--line));
+  background-color: rgb(var(--raised) / 0.72);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
 }
 
 ::selection {
-  background: #f0f1f3;
-  color: #0a0b0d;
+  background: rgb(var(--text));
+  color: rgb(var(--ink));
 }

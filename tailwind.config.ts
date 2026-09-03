@@ -1,24 +1,29 @@
 import type { Config } from "tailwindcss";
 
+/** Every colour is a channel triple in globals.css, so `bg-ink/60` still works
+    and one class on <html> repaints the whole product. */
+const token = (name: string) => `rgb(var(--${name}) / <alpha-value>)`;
+
 const config: Config = {
+  darkMode: "class",
   content: ["./app/**/*.{ts,tsx}", "./components/**/*.{ts,tsx}", "./lib/**/*.{ts,tsx}"],
   theme: {
     extend: {
       colors: {
-        ink: "#0a0b0d",
-        surface: "#14161a",
-        raised: "#1b1e23",
-        line: "#24272c",
-        "line-strong": "#3a3d42",
-        text: "#f0f1f3",
-        muted: "#84868c",
-        dim: "#56585e",
+        ink: token("ink"),
+        surface: token("surface"),
+        raised: token("raised"),
+        line: token("line"),
+        "line-strong": token("line-strong"),
+        text: token("text"),
+        muted: token("muted"),
+        dim: token("dim"),
         grade: {
-          a: "#4ade80",
-          b: "#a3e635",
-          c: "#fbbf24",
-          d: "#fb923c",
-          f: "#f87171",
+          a: token("grade-a"),
+          b: token("grade-b"),
+          c: token("grade-c"),
+          d: token("grade-d"),
+          f: token("grade-f"),
         },
       },
       fontFamily: {
