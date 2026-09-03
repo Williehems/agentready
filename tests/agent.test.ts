@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { describe, it } from "node:test";
+import { describe, it, mock } from "node:test";
 import { act, frontPage, personaEmail, priceOnFrontPage, usable, withOurEmail } from "../lib/agent";
 import type { Perception } from "../lib/types";
 
@@ -274,4 +274,104 @@ describe("act: a control that cannot be operated", () => {
     assert.deepEqual(f.asked, ["locator aria-ref=e7", "click"]);
   });
 });
+
+/** The same locator, plus the one question asked of a control that would not move. */
+interface HangLocator extends FakeLocator {
+  evaluate?(fn: (node: Element) => string): Promise<string>;
+}
+
+/**
+ * A control the browser never finishes reaching for.
+ *
+ * Measured on resend.com/docs/api-reference/api-keys/create-api-key, where the docs
+ * nav is painted over a link in the page body: a click asking for 8s was still
+ * pending 30s later and a trial click asking for 5s was still pending at 25s, while
+ * that same tab answered `evaluate` in 280ms and a second tab opened and navigated
+ * in under a second. Playwright's deadline never fired, so ours has to. It happened
+ * three times in one run and cost 90s of a 240s budget to say nothing.
+ *
+ * The page-side answer was measured with the same `elementFromPoint` call the code
+ * uses, on that link, and named the nav anchor sitting on top of it. What these
+ * pin is the half that runs on our side: that the clock goes off at all, and that
+ * what the transcript and the model are handed is the site's defect rather than a
+ * note about our patience.
+ */
+describe("act: an operation the browser never finishes", () => {
+  const state: Perception = {
+    url: "https://resend.com/docs/api-reference/api-keys/create-api-key",
+    title: "Create API key",
+    text: "Fetch the complete documentation index at: /docs/llms.txt",
+    jsGated: false,
+    hasPrice: false,
+    elements: [
+      { index: 1, role: "link", name: "/docs/llms.txt", ref: "e5", href: "/docs/llms.txt" },
+    ],
+  };
+
+  /** A page whose every operation hangs, answering `answer` when asked why. */
+  const hangingPage = (answer?: string) => {
+    const locator: HangLocator = {
+      first: () => locator,
+      click: () => new Promise<void>(() => {}),
+      fill: () => new Promise<void>(() => {}),
+      selectOption: async () => [],
+    };
+    if (answer !== undefined) locator.evaluate = async () => answer;
+    const page = {
+      locator: () => locator,
+      getByRole: () => locator,
+      waitForLoadState: async () => {},
+      waitForTimeout: async () => {},
+      mouse: { wheel: async () => {} },
+    };
+    return page as unknown as Parameters<typeof act>[0];
+  };
+
+  /** Reach act()'s own deadline without spending ten real seconds getting there. */
+  const raced = async (
+    page: Parameters<typeof act>[0],
+    d: Parameters<typeof act>[2],
+  ): Promise<string | undefined> => {
+    mock.timers.enable({ apis: ["setTimeout"] });
+    try {
+      const running = act(page, state, d);
+      mock.timers.tick(11_000);
+      return await running;
+    } finally {
+      mock.timers.reset();
+    }
+  };
+
+  it("names what is painted over the link rather than waiting out our whole ceiling", async () => {
+    const why = await raced(
+      hangingPage('<a> "API Keys" is painted over it, so a click there never reaches it'),
+      { action: "click", target: 1, reasoning: "Open the documentation index" },
+    );
+    assert.equal(
+      why,
+      'link "/docs/llms.txt" did not accept a click within 10s: <a> "API Keys" is painted over it, so a click there never reaches it',
+    );
+  });
+
+  it("says as much when the page reports nothing on top of it", async () => {
+    const why = await raced(hangingPage(""), { action: "click", target: 1, reasoning: "" });
+    assert.match(why ?? "", /within 10s, and nothing is covering it, so the browser never finished/);
+  });
+
+  it("offers no explanation it does not have", async () => {
+    const why = await raced(hangingPage(undefined), { action: "click", target: 1, reasoning: "" });
+    assert.equal(why, 'link "/docs/llms.txt" did not accept a click within 10s');
+  });
+
+  it("bounds a type the same way, since it is the same wait", async () => {
+    const why = await raced(hangingPage(""), {
+      action: "type",
+      target: 1,
+      value: "hello",
+      reasoning: "",
+    });
+    assert.match(why ?? "", /did not accept a type within 10s/);
+  });
+});
+
 

@@ -348,7 +348,75 @@ interface Locatorish {
     value: string | { label: string },
     opts?: { timeout?: number },
   ): Promise<string[]>;
+  /** Optional: only ever used to explain a hang, never to carry out a decision. */
+  evaluate?<R>(fn: (node: Element) => R): Promise<R>;
 }
+
+/**
+ * How long an operation gets, and why act() holds a clock over the one Playwright
+ * is already holding.
+ *
+ * Because their timeout is not always a bound. Measured on
+ * resend.com/docs/api-reference/api-keys/create-api-key, on a link the docs nav
+ * paints over: a click asking for 8s and a trial click asking for 5s were both
+ * still pending 30s and 25s later, while that same tab answered `evaluate` in
+ * 280ms and a second tab opened and navigated in under a second. Neither the page
+ * nor the connection was stuck; their deadline simply never fired. `force: true`,
+ * which skips the actionability wait altogether, dispatched in 2.5s, which places
+ * the hang in the hit-target check, before anything is sent to the page.
+ *
+ * Three of those in a row ended a live run at step 6 having spent 90s of a 240s
+ * budget on one link, and all the transcript could say was "the action did not
+ * finish within 25s", which is a fact about us rather than about the site.
+ *
+ * Ours sits above theirs on purpose: on a page where their clock does work, it
+ * still wins the race and keeps its own more specific message.
+ */
+const CLICK_MS = 8_000;
+const FILL_MS = 8_000;
+const SELECT_MS = 5_000;
+const OUR_MARGIN = 2_000;
+
+/**
+ * What the page has on top of this element, in its own words.
+ *
+ * Asked only once an operation on it has hung, to turn our timeout into the site's
+ * finding. A control something else is painted over is a real defect and not a
+ * quirk of automation: a visitor with a mouse cannot press it either, and an owner
+ * can fix it. The rule here is the one Playwright's hit-target check uses, a hit on
+ * the element itself or on anything inside it, so the answer explains their wait
+ * rather than describing something else.
+ *
+ * Undefined when the question could not be put at all, which stays silence: a
+ * probe that did not answer is not evidence about the site.
+ */
+async function whatIntercepts(locator: Locatorish): Promise<string | undefined> {
+  if (!locator.evaluate) return undefined;
+  try {
+    return await withTimeout(
+      locator.evaluate((node: Element) => {
+        const r = node.getBoundingClientRect();
+        if (r.width < 1 || r.height < 1) return "it has no size on the page";
+        const x = r.x + r.width / 2;
+        const y = r.y + r.height / 2;
+        if (x < 0 || y < 0 || x > window.innerWidth || y > window.innerHeight) {
+          return "its centre is outside the viewport";
+        }
+        const top = document.elementFromPoint(x, y);
+        if (!top) return "nothing at all is at its centre";
+        if (top === node || node.contains(top)) return "";
+        const label = (top.textContent ?? "").replace(/\s+/g, " ").trim().slice(0, 40);
+        const what = `<${top.tagName.toLowerCase()}>${label ? ` "${label}"` : ""}`;
+        return `${what} is painted over it, so a click there never reaches it`;
+      }),
+      4_000,
+      "the element",
+    );
+  } catch {
+    return undefined;
+  }
+}
+
 
 /** Execute one decision. Returns an error string when the element would not budge. */
 export async function act(page: ActPage, p: Perception, d: Decision): Promise<string | undefined> {
@@ -389,25 +457,43 @@ export async function act(page: ActPage, p: Perception, d: Decision): Promise<st
     ? page.locator(`aria-ref=${el.ref}`).first()
     : page.getByRole(el.role, { name: el.name, exact: false }).first();
 
+  /** Their clock, and ours over it. See CLICK_MS for what happens without ours. */
+  const bounded = <T,>(work: Promise<T>, theirs: number) =>
+    withTimeout(work, theirs + OUR_MARGIN, `the ${d.action}`);
+
   try {
     if (d.action === "type") {
       if (!d.value) return "type was chosen with nothing to type";
-      await locator.fill(d.value, { timeout: 8000 });
+      await bounded(locator.fill(d.value, { timeout: FILL_MS }), FILL_MS);
     } else if (d.action === "select") {
       if (!d.value) return "select was chosen with no choice named";
       // By label first, because the label is what the model was shown. Then by
       // value, for the selects whose visible text and underlying value differ.
       // Both are short: a dropdown that answers at all answers in milliseconds.
       try {
-        await locator.selectOption({ label: d.value }, { timeout: 5000 });
+        await bounded(locator.selectOption({ label: d.value }, { timeout: SELECT_MS }), SELECT_MS);
       } catch {
-        await locator.selectOption(d.value, { timeout: 5000 });
+        await bounded(locator.selectOption(d.value, { timeout: SELECT_MS }), SELECT_MS);
       }
     } else {
-      await locator.click({ timeout: 8000 });
+      await bounded(locator.click({ timeout: CLICK_MS }), CLICK_MS);
       await settle();
     }
   } catch (err) {
+    // Our own clock going off says nothing yet about the site, so ask the page why
+    // before writing it down. "Something is painted over the link" is a finding an
+    // owner can act on; "the action did not finish" is a line about our patience.
+    if (err instanceof TimeoutError) {
+      const clause = await whatIntercepts(locator);
+      const secs = Math.round(err.ms / 1000);
+      const tail =
+        clause === undefined
+          ? ""
+          : clause
+            ? `: ${clause}`
+            : ", and nothing is covering it, so the browser never finished the attempt";
+      return `${el.role} "${el.name}" did not accept a ${d.action} within ${secs}s${tail}`;
+    }
     const why = (err instanceof Error ? err.message : String(err)).split("\n")[0].slice(0, 120);
     return `${el.role} "${el.name}" would not accept a ${d.action}: ${why}`;
   }
@@ -499,18 +585,36 @@ export async function priceOnFrontPage(
  * Same session, so no extra minutes and nothing more to pay for. The context is
  * closed either way.
  */
+/**
+ * The whole stranger check, end to end.
+ *
+ * Because only the navigation inside it was ever bounded. Measured on the resend.com
+ * run: PRICE_CHECK_MS caps the goto at 12s and the watch window is 6s, and the check
+ * still took 62 seconds of a run that was already over its budget, so the other 44
+ * went to opening the context or the page. A postscript on a finished run must never
+ * be able to do that.
+ */
+const PRICE_TOTAL_MS = 25_000;
+
 async function priceOnStranger(
   browser: NonNullable<Awaited<ReturnType<typeof launchBrowser>>>["browser"],
   home: string,
 ): Promise<boolean | undefined> {
   let context: Awaited<ReturnType<typeof browser.newContext>> | undefined;
   try {
-    context = await browser.newContext();
-    return await priceOnFrontPage((await context.newPage()) as unknown as ActPage, home);
+    return await withTimeout(
+      (async () => {
+        context = await browser.newContext();
+        return priceOnFrontPage((await context.newPage()) as unknown as ActPage, home);
+      })(),
+      PRICE_TOTAL_MS,
+      "the front page in a clean context",
+    );
   } catch {
     return undefined;
   } finally {
-    await context?.close().catch(() => {});
+    // Bounded too: this runs after the verdict is already owed to the reader.
+    if (context) await withTimeout(context.close(), 5_000, "closing the context").catch(() => {});
   }
 }
 
