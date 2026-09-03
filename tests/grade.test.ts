@@ -358,6 +358,28 @@ describe("grade: the soft findings", () => {
     assert.ok(blockers(transcript({ perceptions: retyping, stepCount: 4 })).includes("loop"));
   });
 
+  it("counts a submit coming to life as the page changing", () => {
+    // The other half of the prompt rule that tells the agent to wait out a
+    // challenge which clears itself. Nothing about that page moves except the one
+    // thing that matters, so without the disabled state in the fingerprint the
+    // patience we asked for is graded as going in circles.
+    const form = (live: boolean) =>
+      page({
+        url: "https://plausible.io/register",
+        elements: [
+          { index: 1, role: "textbox", name: "Email", value: "alex@example.com" },
+          { index: 2, role: "button", name: "Start my free trial", ...(live ? {} : { disabled: true }) },
+        ],
+      });
+
+    const waiting = [form(false), form(false), form(false), form(true)];
+    assert.ok(!blockers(transcript({ perceptions: waiting, stepCount: 4 })).includes("loop"));
+
+    // And a submit that stays dead for all four is still the loop it always was.
+    const dead = Array.from({ length: 4 }, () => form(false));
+    assert.ok(blockers(transcript({ perceptions: dead, stepCount: 4 })).includes("loop"));
+  });
+
   it("does not call it a loop when our own actuator stopped landing clicks", () => {
     // Seen live: three consecutive hung clicks left four identical perceptions of
     // a booking form that was working fine. The page could not change because we

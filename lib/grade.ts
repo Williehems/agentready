@@ -189,13 +189,21 @@ function deadEndHandoff(t: Transcript): string | undefined {
  * number and a note would otherwise look identical at every step and earn a loop
  * blocker for working correctly. Retyping the same value into the same field
  * still leaves this string unchanged, which is the case the blocker is for.
+ *
+ * So does whether a control can be operated. A submit going live is the single
+ * most important way a page can change, and nothing else about it moves: same
+ * roles, same names, same values, same count. The prompt now tells the agent to
+ * look once more at a form whose submit is disabled by a challenge that clears
+ * itself, and without this that patience reads back as going in circles.
  */
 function fingerprint(p: Perception): string {
   return [
     p.url,
     p.title,
     p.elements.length,
-    p.elements.map((e) => `${e.role}:${e.name}:${e.value ?? ""}`).join("|"),
+    p.elements
+      .map((e) => `${e.role}:${e.name}:${e.value ?? ""}:${e.disabled ? "off" : "on"}`)
+      .join("|"),
   ].join("~");
 }
 
