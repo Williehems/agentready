@@ -224,9 +224,10 @@ function deadEndHandoff(t: Transcript): string | undefined {
 }
 
 /**
- * The two halves an `integrate` run is sent to find.
+ * The call half of what an `integrate` run is sent to find, the other being
+ * KEY_ROUTE_SIGNS below.
  *
- * A code sign has to be something no ordinary sentence contains, because this is
+ * A call sign has to be something no ordinary sentence contains, because this is
  * the half that decides whether a claim of having finished stands. `sk_test` and
  * `sk_live` were in this list and are not any more: they are key literals, so on
  * docs.stripe.com/keys they credited a code example to a page whose prose is
@@ -236,10 +237,26 @@ function deadEndHandoff(t: Transcript): string | undefined {
  * "import your contacts"; the bracketed and quoted forms below cannot be said
  * except in code.
  */
-const CODE_SIGNS = [
-  "curl ", "npm install", "pip install", "pip3 install", "yarn add", "pnpm add",
+const CALL_SIGNS = [
+  "curl ", "authorization: bearer", "require(", "fetch(", "import {", 'from "',
+];
+
+/**
+ * Getting the SDK onto the machine, which is not the same as using it.
+ *
+ * These used to sit in the list above, and the model caught us at it. On
+ * docs.stripe.com/api/authentication?lang=python the only code sign in the page
+ * text is `pip install`, and asked whether it was finished the model answered
+ * "click Python button to view a code example" instead of done. It was right: an
+ * install line is not the copyable call the task asks for, and had it said done
+ * we would have paid the 40 points for finishing against a dependency command.
+ * So an install still counts as the key info an integrate run needs to have
+ * found, and it no longer corroborates a claim of having finished. The A on that
+ * same page without the query string is unaffected: its sign is `curl `.
+ */
+const INSTALL_SIGNS = [
+  "npm install", "pip install", "pip3 install", "yarn add", "pnpm add",
   "go get ", "composer require", "gem install", "dotnet add package",
-  "authorization: bearer", "require(", "fetch(", "import {", 'from "',
 ];
 
 const KEY_ROUTE_SIGNS = [
@@ -256,6 +273,19 @@ const CHECKOUT_SIGNS = [
 ];
 
 const CHECKOUT_URLS = ["checkout", "/cart", "payment", "/order", "/pay"];
+
+/**
+ * The key info an `integrate` run came for: any code at all, or a named way to a
+ * key. Deliberately wider than what corroborates a finish, since an install line
+ * is part of what a developer is looking for even though it does not show the API
+ * being called. Read off the lists rather than a hardcoded npm-and-pip pair, so a
+ * Go or PHP page is credited for the same thing a Node or Python one already was.
+ */
+function integrateKeyInfo(text: string): boolean {
+  if (text.includes("```")) return true;
+  const signs = CALL_SIGNS.concat(INSTALL_SIGNS, KEY_ROUTE_SIGNS);
+  return signs.some((s) => text.includes(s));
+}
 
 /**
  * A control only a visitor with an account is offered. A fresh browser is never
@@ -314,7 +344,10 @@ export function endStateSeen(t: Transcript): string | undefined {
 
   switch (t.action) {
     case "integrate": {
-      const code = sign(everywhere, CODE_SIGNS);
+      // The call, not the install. An `npm install` on the page says a developer
+      // could get started; it does not show the API being used, and this is the
+      // check that decides whether 40 points for finishing are paid out.
+      const code = sign(everywhere, CALL_SIGNS);
       const key = sign(everywhere, KEY_ROUTE_SIGNS);
       return code && key
         ? `a code example ("${code.trim()}") and a route to a key ("${key}")`
@@ -514,7 +547,7 @@ export function grade(t: Transcript): Verdict {
   // is credited for them whether or not the URL we picked happened to pass one.
   if (
     priceSeen ||
-    (t.action === "integrate" && /```|curl |api key|npm install|pip install/.test(text)) ||
+    (t.action === "integrate" && integrateKeyInfo(text)) ||
     (t.action === "contact" && /@|contact/.test(text) && !cta.deadEndOnly && !handoff) ||
     (t.action === "book" && /\b(mon|tue|wed|thu|fri|sat|sun)\w*\b|\bam\b|\bpm\b|available/.test(text))
   ) {
@@ -583,7 +616,7 @@ export function grade(t: Transcript): Verdict {
 const END_STATE_WANTED: Record<ActionKind, string> = {
   signup: "no account, and no page saying one had been created",
   purchase: "no checkout or payment step",
-  integrate: "not both a code example and a stated route to an API key",
+  integrate: "not both a code example calling the API and a stated route to an API key",
   book: "no booking submitted, and no answer from the site",
   contact: "no contact form holding a typed message",
 };

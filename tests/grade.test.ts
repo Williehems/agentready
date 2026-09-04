@@ -699,6 +699,48 @@ describe("grade: a claim of having finished", () => {
     assert.match(grade(t).summary, /code example/);
   });
 
+  /*
+   * Also taken off a real page, and this time the model caught the grader rather
+   * than the other way round. On docs.stripe.com/api/authentication?lang=python
+   * the only code sign in the text is `pip install`, and asked whether it was
+   * finished the model answered "click Python button to view a code example". It
+   * was right: installing the SDK is not calling the API, and an install line used
+   * to be worth the same 40 points as a cURL sample. The install still counts as
+   * the key info the run came for, which is the other half of this test.
+   */
+  it("does not read an install line as the call that finishes an integrate run", () => {
+    const t = transcript({
+      action: "integrate",
+      perceptions: [
+        page({
+          url: "https://docs.stripe.com/api/authentication?lang=python",
+          title: "Authentication",
+          text: `${PROSE}\npip install stripe\nAuthenticate with your secret key.`,
+        }),
+      ],
+      declaredDone: true,
+    });
+    const v = grade(t);
+    assert.ok(!v.milestones.includes("completed-action"));
+    assert.ok(v.milestones.includes("found-key-info"), "an install is still what a developer came for");
+    assert.match(v.summary, /code example calling the API/);
+  });
+
+  it("credits the same page once it shows a real call", () => {
+    const t = transcript({
+      action: "integrate",
+      perceptions: [
+        page({
+          url: "https://docs.stripe.com/api/authentication",
+          title: "Authentication",
+          text: `${PROSE}\ncurl https://api.stripe.com/v1/charges\nAuthenticate with your secret key.`,
+        }),
+      ],
+      declaredDone: true,
+    });
+    assert.ok(grade(t).milestones.includes("completed-action"), "the run this product's first A came from");
+  });
+
   it("takes the payment step as the end of a purchase, by its fields or by its URL", () => {
     const fields = transcript({
       action: "purchase",
