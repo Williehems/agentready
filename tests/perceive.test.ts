@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { fingerprint, marks, modalIsOpen, parseAriaSnapshot, renderState, resembles } from "../lib/perceive";
+import { fingerprint, marks, modalIsOpen, parseAriaSnapshot, prose, renderState, resembles } from "../lib/perceive";
 import type { Perception } from "../lib/types";
 
 /**
@@ -698,6 +698,62 @@ describe("modalIsOpen: what counts as covering the page", () => {
   });
 });
 
+
+/**
+ * The prose budget, and what it was being spent on.
+ *
+ * Taken from docs.stripe.com/keys: 1200 characters of sidebar ahead of the page's
+ * own first sentence, inside a 2800 character cap, on the one task whose finishing
+ * test is something you have to read the page to have seen.
+ */
+describe("prose: the page rather than the furniture around it", () => {
+  const SIDEBAR =
+    "Get started\nPayments\nRevenue\nChangelog\nPagination\nTerraform\nSecurity\nPrivacy";
+  const BODY =
+    "API keys\nUse API keys to authenticate API requests.\n" +
+    "Stripe uses API keys to authenticate requests from your integration and " +
+    "determine which Stripe resources it can access. Use the API keys page in the " +
+    "Dashboard to create, reveal, expire, and rotate keys.";
+
+  it("takes the sidebar out of the text, wherever the sidebar sits", () => {
+    const outside = prose({ body: `${SIDEBAR}\n${BODY}`, content: BODY, chrome: [SIDEBAR] });
+    const inside = prose({ body: `${SIDEBAR}\n${BODY}`, content: `${SIDEBAR}\n${BODY}`, chrome: [SIDEBAR] });
+    for (const text of [outside, inside]) {
+      assert.ok(text.includes("authenticate API requests"));
+      assert.ok(!text.includes("Terraform"), "the sidebar survived");
+    }
+  });
+
+  it("leaves a page that names no root and wraps nothing in a nav exactly as it was", () => {
+    assert.equal(prose({ body: BODY, content: "", chrome: [] }), BODY);
+  });
+
+  it("prefers the whole body to a content root holding a spinner", () => {
+    const text = prose({ body: BODY, content: "Loading", chrome: [] });
+    assert.ok(text.includes("authenticate API requests"));
+  });
+
+  it("keeps a wall of links, because that is what that page is", () => {
+    const links = "Home\nAbout\nBlog\nContact\nCareers\nPress";
+    assert.equal(prose({ body: links, content: "", chrome: [links] }), links);
+  });
+
+  it("removes a repeated nav every time it appears, not just the first", () => {
+    const nav = "Docs\nAPI\nSupport";
+    const text = prose({ body: `${nav}\n${BODY}\n${nav}`, content: "", chrome: [nav] });
+    assert.ok(!text.includes("Support"));
+    assert.ok(text.includes("rotate keys"));
+  });
+
+  it("collapses the blank runs that removing a block leaves behind", () => {
+    const text = prose({ body: `A\n\nnav here\n\nB`, content: "", chrome: ["nav here"] });
+    assert.equal(text, "A\nB");
+  });
+
+  it("survives a page that answered with nothing at all", () => {
+    assert.equal(prose({ body: "", content: "", chrome: [] }), "");
+  });
+});
 
 describe("renderState", () => {
   function perception(over: Partial<Perception> = {}): Perception {

@@ -196,6 +196,65 @@ export function modalIsOpen(): boolean {
   return false;
 }
 
+/**
+ * The page's text, split into the part that is the page and the parts that are
+ * the furniture around it.
+ *
+ * Measured on docs.stripe.com/keys, where it decided the grade. The prose sent to
+ * the model was `document.body.innerText` capped at 2800 characters, and the first
+ * 1200 of those were Stripe's docs sidebar: Payments, Revenue, Changelog,
+ * Pagination, Terraform, and on for another eleven hundred characters. The page's
+ * own first sentence arrived at character 1250, the body was cut off mid-table,
+ * and the model was then asked whether it had seen a code example. Across the 25
+ * stored runs, 46% of perceptions hit that cap.
+ *
+ * Both halves are returned rather than one answer, because which one is right
+ * depends on the page and that judgement is worth testing without a browser. See
+ * prose().
+ *
+ * Runs in the page, so it closes over nothing and defines no named function of
+ * its own: esbuild's keep-names wraps those in a `__name()` helper that does not
+ * exist inside the page. See modalIsOpen for the same constraint.
+ */
+export function readZones(): { body: string; content: string; chrome: string[] } {
+  const body = document.body ? document.body.innerText : "";
+
+  // The content root the page names for itself, whichever of those names it uses
+  // and whichever holds the most. A site with several <article> cards is a list of
+  // things, and the longest of them is the one a reader came for.
+  let content = "";
+  for (const selector of ["main", '[role="main"]', "article"]) {
+    for (const el of Array.from(document.querySelectorAll(selector))) {
+      const own = (el as HTMLElement).innerText || "";
+      if (own.length > content.length) content = own;
+    }
+  }
+
+  // Furniture, in every spelling a page uses for it. Outermost only: a nav inside
+  // a header is already part of the header's own text, and removing the same
+  // words twice cannot remove them twice.
+  const chrome: string[] = [];
+  const parts = Array.from(
+    document.querySelectorAll(
+      'nav, header, footer, aside, [role="navigation"], [role="banner"], [role="contentinfo"], [role="complementary"]',
+    ),
+  );
+  for (const el of parts) {
+    let nested = false;
+    for (const other of parts) {
+      if (other !== el && other.contains(el)) {
+        nested = true;
+        break;
+      }
+    }
+    if (nested) continue;
+    const own = (el as HTMLElement).innerText || "";
+    if (own) chrome.push(own);
+  }
+
+  return { body, content, chrome };
+}
+
 const MAX_ELEMENTS = 60;
 const MAX_TEXT = 2800;
 /**
@@ -583,6 +642,54 @@ export function parseAriaSnapshot(snapshot: string, modalOpen = false): Perceive
 }
 
 /**
+ * How much of a content root is enough to trust it over the whole body. A `<main>`
+ * holding a spinner is a page that has not rendered yet, and preferring it would
+ * hide the rest of the page for nothing.
+ */
+const MIN_CONTENT = 200;
+
+/** And how little is too little to have been worth removing anything for. */
+const MIN_KEPT = 120;
+
+/** Blank runs collapsed. The one rule this file reads text by. */
+function collapse(s: string): string {
+  return s.replace(/\s*\n\s*\n\s*/g, "\n").trim();
+}
+
+/**
+ * The page as prose, with the furniture taken out of it.
+ *
+ * Both moves, because either alone leaves the case that motivated it. Preferring
+ * the content root fixes a site whose sidebar sits outside `<main>`; subtracting
+ * the furniture fixes docs.stripe.com, whose sidebar sits inside it. A page that
+ * names no root and wraps nothing in a nav is untouched by both and reads exactly
+ * as it did before.
+ *
+ * Subtraction by text rather than by DOM surgery: `innerText` needs layout, so a
+ * detached clone with the navs pruned reports the wrong thing, or nothing. A
+ * child's `innerText` is a run of its parent's, which makes removing the string
+ * the same operation with none of that risk.
+ */
+export function prose(zones: { body: string; content: string; chrome: string[] }): string {
+  const whole = collapse(zones.body);
+  const inner = collapse(zones.content);
+  let text = inner.length >= MIN_CONTENT ? inner : whole;
+
+  const blocks = zones.chrome.map(collapse).filter(Boolean).sort((a, b) => b.length - a.length);
+  for (const block of blocks) {
+    // A block that is nearly all of what we hold is the page, whatever tag it wears.
+    if (block.length >= text.length * 0.9) continue;
+    if (!text.includes(block)) continue;
+    text = text.split(block).join("\n");
+  }
+
+  // A site whose page really is a wall of links keeps its wall of links. This is
+  // here to spend the budget better, never to describe less than the page has.
+  const kept = collapse(text);
+  return kept.length >= MIN_KEPT || whole.length < MIN_KEPT ? kept : whole;
+}
+
+/**
  * Never reach for a page method without a try around the call itself. An SDK
  * that has dropped the method throws synchronously, before any `.catch()` on
  * the returned promise can attach, and takes the whole run with it.
@@ -601,11 +708,11 @@ async function attempt<T>(fn: () => Promise<T>, fallback: T, timeoutMs: number):
 }
 
 export async function perceive(page: AgentPage, timeoutMs = PERCEIVE_MS): Promise<Perception> {
-  const [snapshot, rawText, title, modalOpen] = await Promise.all([
+  const [snapshot, zones, title, modalOpen] = await Promise.all([
     attempt(() => page.ariaSnapshot({ mode: "ai" }), "", timeoutMs),
     attempt(
-      () => page.evaluate<string>(() => (document.body ? document.body.innerText : "")),
-      "",
+      () => page.evaluate<{ body: string; content: string; chrome: string[] }>(readZones),
+      { body: "", content: "", chrome: [] },
       timeoutMs,
     ),
     attempt(() => page.title(), "", timeoutMs),
@@ -615,7 +722,7 @@ export async function perceive(page: AgentPage, timeoutMs = PERCEIVE_MS): Promis
   ]);
 
   const elements = parseAriaSnapshot(snapshot, modalOpen);
-  const text = rawText.replace(/\s*\n\s*\n\s*/g, "\n").trim().slice(0, MAX_TEXT);
+  const text = prose(zones).slice(0, MAX_TEXT);
 
   return {
     url: page.url(),
@@ -623,15 +730,17 @@ export async function perceive(page: AgentPage, timeoutMs = PERCEIVE_MS): Promis
     elements,
     text,
     // A real page with content has both actionable elements and prose. Missing
-    // both is the signature of a JS-gated or blocked page.
-    jsGated: elements.length === 0 && text.length < 200,
+    // both is the signature of a JS-gated or blocked page. Read off the whole body,
+    // since a page that is nothing but a nav bar has not rendered either.
+    jsGated: elements.length === 0 && collapse(zones.body).length < 200,
     // Tested against the whole page, not the trimmed copy above. MAX_TEXT is a
     // token budget for the model, and a price that happens to sit below it is
     // still selectable text on the page. Measured on plausible.io: the pricing
     // slider reads in euros and the run was charged no-structured-price anyway,
     // because our own truncation cut the page off above it. Charging a site for
     // what our trimming hid is the one kind of wrong finding this cannot afford.
-    hasPrice: looksPriced(rawText),
+    // The same argument covers a price in a footer that prose() removes.
+    hasPrice: looksPriced(zones.body),
   };
 }
 
