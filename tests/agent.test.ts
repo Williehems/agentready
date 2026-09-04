@@ -461,7 +461,6 @@ describe("recall: what the model is told it has already done from here", () => {
 
   it("says nothing at all on a page the run has not stood on", () => {
     const m = fresh();
-    m.seen.push({ page: login, moves: ['click "API Keys"'] });
     assert.equal(recall(m, docs), "");
   });
 
@@ -469,9 +468,34 @@ describe("recall: what the model is told it has already done from here", () => {
     const m = fresh();
     m.seen.push({ page: docs, moves: ['click "API Keys"'] });
     const said = recall(m, docs);
-    assert.match(said, /YOU HAVE BEEN ON THIS PAGE BEFORE/);
+    assert.match(said, /YOU HAVE READ THIS PAGE ALREADY/);
     assert.match(said, /- click "API Keys"/);
-    assert.match(said, /Choose something else\./);
+    assert.match(said, /look somewhere else\./);
+  });
+
+  /**
+   * Run 7 on docs.stripe.com, where naming the turnings was not enough. /keys was
+   * read on steps 4, 6 and 8: the lap warning fired on every return, named the
+   * turnings already taken, and the model answered it by picking an untaken turning
+   * off the same page. Four of ten steps on one page it had already read to the end.
+   * A list of moves invites another move; a list of pages does not.
+   */
+  it("names the pages already read, wherever the run is standing", () => {
+    const m = fresh();
+    m.seen.push({ page: docs, moves: ['click "API Keys"'] });
+    m.seen.push({ page: login, moves: ['type "Email"'] });
+    const said = recall(m, docs);
+    assert.match(said, /PAGES YOU HAVE ALREADY READ IN FULL/);
+    assert.match(said, /- https:\/\/console\.groq\.com\/keys/);
+    // Not this one. The block below is what speaks for the page underfoot, and
+    // listing it here would read as an instruction to leave a page just arrived at.
+    assert.ok(!said.includes("- https://console.groq.com/docs/overview"));
+  });
+
+  it("says nothing about pages read when only the current one has been", () => {
+    const m = fresh();
+    m.seen.push({ page: docs, moves: ['click "API Keys"'] });
+    assert.ok(!recall(m, docs).includes("ALREADY READ IN FULL"));
   });
 
   it("keeps each page's turnings to itself", () => {
@@ -519,7 +543,7 @@ describe("recall: what the model is told it has already done from here", () => {
   it("does not call a page it navigated to the page it left", () => {
     const m = fresh();
     m.seen.push({ page: docs, moves: ['click "API Keys"'] });
-    assert.equal(recall(m, login), "");
+    assert.ok(!recall(m, login).includes("READ THIS PAGE ALREADY"));
   });
 
   it("carries the other two blocks alongside it, since a lap is not the only thing worth knowing", () => {
@@ -533,7 +557,7 @@ describe("recall: what the model is told it has already done from here", () => {
     assert.match(said, /THESE LEFT THE PAGE EXACTLY AS IT WAS/);
     // In that order, so the most specific thing is the last thing read.
     assert.ok(said.indexOf("ALREADY TRIED") < said.indexOf("EXACTLY AS IT WAS"));
-    assert.ok(said.indexOf("EXACTLY AS IT WAS") < said.indexOf("THIS PAGE BEFORE"));
+    assert.ok(said.indexOf("EXACTLY AS IT WAS") < said.indexOf("READ THIS PAGE ALREADY"));
   });
 
   it("shows only the last five moves but every dead end, which is the point of keeping them apart", () => {

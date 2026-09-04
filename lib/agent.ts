@@ -378,17 +378,42 @@ export function recall(memory: Memory, p: Perception): string {
         .map((k) => `- ${k}`)
         .join("\n")}`
     : "";
+  /**
+   * The pages already read, by address, wherever the run is standing now.
+   *
+   * Because the block below was not enough on its own. Measured on run 7 of
+   * docs.stripe.com: /keys was read on steps 4, 6 and 8, and its own paragraph
+   * answers half the task. The lap warning fired on every return and named the
+   * turnings already taken, so the model picked an untaken turning off the same
+   * page and came back a third time. Four of ten steps on one page it had already
+   * read to the end.
+   *
+   * A list of moves invites another move. A list of pages says the thing the run
+   * needs to know: this address has been read, and reading it again is not a step
+   * toward anything. Addresses rather than page states, because this is the one
+   * place the model is better served by what it can recognise than by what is
+   * strictly true, and a URL is what a docs site puts in its own sidebar.
+   */
+  const elsewhere = Array.from(
+    new Set(memory.seen.filter((s) => s.page.url !== p.url).map((s) => s.page.url)),
+  );
+  const read = elsewhere.length
+    ? `\n\nPAGES YOU HAVE ALREADY READ IN FULL. GOING BACK TO ONE IS NOT PROGRESS:\n${elsewhere
+        .slice(-8)
+        .map((u) => `- ${u}`)
+        .join("\n")}`
+    : "";
   // Says what was tried from here and stops there. Coming back to a page is often
   // the right move; it is taking the same turning off it that costs the run the
   // budget, and the model is better placed than this code to know which of the
   // remaining ones is worth a step.
   const before = visited(memory, p)?.moves;
   const again = before?.length
-    ? `\n\nYOU HAVE BEEN ON THIS PAGE BEFORE. FROM HERE YOU ALREADY TRIED:\n${before
+    ? `\n\nYOU HAVE READ THIS PAGE ALREADY AND IT DID NOT FINISH THE TASK. FROM HERE YOU ALREADY TRIED:\n${before
         .map((m) => `- ${m}`)
-        .join("\n")}\nRepeating any of those brings you back here. Choose something else.`
+        .join("\n")}\nRepeating any of those brings you back here. If the answer were on this page you would have it by now, so look somewhere else.`
     : "";
-  return `${recent}${inert}${again}`;
+  return `${recent}${inert}${read}${again}`;
 }
 
 /**
