@@ -663,6 +663,29 @@ describe("grade: a claim of having finished", () => {
     assert.match(v.summary, /route to an API key/);
   });
 
+  /*
+   * Taken off the page this was measured on. docs.stripe.com/keys is prose about
+   * keys with no code anywhere on it, and it names sk_test_ and sk_live_ while
+   * explaining which is which. Reading a key literal as a code example credited
+   * the code half to a page that has none, which is the whole of what stands
+   * between a claim and the points it claims.
+   */
+  it("does not read a key literal as a code example", () => {
+    const t = transcript({
+      action: "integrate",
+      perceptions: [
+        page({
+          url: "https://docs.stripe.com/keys",
+          title: "API keys",
+          text: `${PROSE}\nSandbox keys start with sk_test_ and live keys with sk_live_.`,
+        }),
+      ],
+      declaredDone: true,
+    });
+    assert.ok(!grade(t).milestones.includes("completed-action"));
+    assert.match(grade(t).summary, /code example/);
+  });
+
   it("takes the payment step as the end of a purchase, by its fields or by its URL", () => {
     const fields = transcript({
       action: "purchase",

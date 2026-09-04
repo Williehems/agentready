@@ -224,14 +224,22 @@ function deadEndHandoff(t: Transcript): string | undefined {
 }
 
 /**
- * The two halves an `integrate` run is sent to find. Drawn from
- * docs.stripe.com/keys, which carries both many times over: `curl` blocks beside
- * prose about where a secret key comes from.
+ * The two halves an `integrate` run is sent to find.
+ *
+ * A code sign has to be something no ordinary sentence contains, because this is
+ * the half that decides whether a claim of having finished stands. `sk_test` and
+ * `sk_live` were in this list and are not any more: they are key literals, so on
+ * docs.stripe.com/keys they credited a code example to a page whose prose is
+ * entirely about keys and carries no code at all. Checked against the 25 stored
+ * runs, that one entry was the whole of the false crediting. `import ` came out
+ * for the same reason at a lower rate, since a marketing page will happily say
+ * "import your contacts"; the bracketed and quoted forms below cannot be said
+ * except in code.
  */
 const CODE_SIGNS = [
-  "curl ", "npm install", "pip install", "pip3 install", "yarn add", "go get ",
-  "composer require", "authorization: bearer", "import ", "require(", "fetch(",
-  "sk_test", "sk_live",
+  "curl ", "npm install", "pip install", "pip3 install", "yarn add", "pnpm add",
+  "go get ", "composer require", "gem install", "dotnet add package",
+  "authorization: bearer", "require(", "fetch(", "import {", 'from "',
 ];
 
 const KEY_ROUTE_SIGNS = [
