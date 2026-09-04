@@ -1212,7 +1212,17 @@ export async function runAudit(opts: RunOptions): Promise<void> {
   };
 
   try {
-    await mkdir(shotDir, { recursive: true });
+    /**
+     * A run directory we cannot create costs this run its stored copy and nothing
+     * else. Every write into it is already tolerant: the screenshots degrade the
+     * evidence without ending the run, and the transcript write swallows its own
+     * failure. Only this one line was fatal, and it made the whole product
+     * unhostable anywhere the filesystem is read-only, which is most serverless
+     * hosts. Uncaught, the error arrives before the first perception, so the catch
+     * below marks the run abandoned and a site that was audited perfectly well
+     * comes back as no verdict.
+     */
+    await mkdir(shotDir, { recursive: true }).catch(() => {});
     // Stopped in the first second or two, while the browser was still being
     // acquired. Nothing has been launched, so nothing needs releasing, and the
     // cheapest correct thing is to never open the session at all.
