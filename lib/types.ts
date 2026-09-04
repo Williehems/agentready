@@ -162,6 +162,25 @@ export interface Perception {
    * Absent rather than false when there was none, so the runs recorded before this
    * existed are distinguishable from pages that genuinely had no code: on those,
    * the grader falls back to reading the trimmed text as it always did.
+   *
+   * This is a conclusion, and it is the only one in a transcript. Everything else
+   * here is what the page showed, which is why a verdict can be recomputed and a
+   * corrected grader corrects its own history. Kept because it is uncapped and so
+   * never costs a live run its letter, but `code` below is what a later grader
+   * reads.
    */
   hasCode?: true;
+  /**
+   * The code-shaped lines of the whole page, deduplicated and capped at 1200
+   * characters: the evidence `hasCode` was concluded from.
+   *
+   * Lines are kept whole or not at all. Truncating them to fit lost 7 of the 38
+   * stored perceptions that carry a call, because a `$ stripe checkout sessions
+   * create -d "..."` line does not prove itself code until character 230.
+   *
+   * Gathered by shape rather than by the rule that judges it, so widening that
+   * rule re-reads every stored run instead of only future ones. Absent when the
+   * page had no such lines, and absent on every run recorded before it existed.
+   */
+  code?: string;
 }

@@ -7,7 +7,7 @@ import type {
   Verdict,
 } from "./types";
 import { ACTIONS, handoffLabel, isDeadEndHref } from "./actions";
-import { fingerprint } from "./perceive";
+import { fingerprint, codeSign, looksCoded } from "./perceive";
 
 /**
  * Grading is deterministic on purpose. The agent loop produces a transcript;
@@ -180,8 +180,40 @@ const VERIFY_SIGNS = [
  * through as elements. A wall is identified as reliably by its controls as by its
  * copy, and reading both costs nothing.
  */
+function pageTextRaw(p: Perception): string {
+  return [p.title, p.text, ...p.elements.map((e) => e.name)].join("\n");
+}
+
 function pageText(p: Perception): string {
-  return [p.title, p.text, ...p.elements.map((e) => e.name)].join("\n").toLowerCase();
+  return pageTextRaw(p).toLowerCase();
+}
+
+/**
+ * The line a sign sits on, in the casing the page used, so a verdict can quote
+ * what was on screen rather than the fragment we went looking for.
+ *
+ * `a code example ("curl ")` is our vocabulary. `a code example ("curl
+ * https://api.stripe.com/v1/charges \")` is the page's, and it is the one a reader
+ * can check for themselves. Matched case-insensitively because the haystack the
+ * sign was found in was lowercased and this one is not.
+ *
+ * Only a line that reads as code, which is not a refinement but the difference
+ * between a quote and a misquote. docs.stripe.com/api opens with "the Stripe API
+ * Docs demonstrate using curl to interact with the API over HTTP", a sentence
+ * carrying the sign and no code at all, and it is the first such line on the page:
+ * quoting it would put a sentence of English in front of a reader under the words
+ * "a code example". The real `curl https://api.stripe.com/v1/charges` is further
+ * down. When no line containing the sign reads as code, the sign itself is
+ * returned, which claims exactly as much as it can support.
+ */
+function codeLine(hay: string, needle: string, max = 200): string {
+  const want = needle.toLowerCase();
+  for (const raw of hay.split("\n")) {
+    const line = raw.trim();
+    if (!line || !line.toLowerCase().includes(want)) continue;
+    if (looksCoded(line)) return line.slice(0, max);
+  }
+  return needle.trim();
 }
 
 function textOf(t: Transcript): string {
@@ -288,6 +320,20 @@ function integrateKeyInfo(text: string): boolean {
 }
 
 /**
+ * Did any page in this run carry a call, read off the whole document rather than
+ * the copy we trimmed down for the model?
+ *
+ * Both routes to that one fact, because only one of them can be revisited. `code`
+ * is the page's code-shaped lines kept as evidence, judged here, so a widened rule
+ * re-reads a run recorded months ago. `hasCode` is the answer some earlier rule
+ * gave at capture time and there is no going back to it, honoured because a run
+ * that predates `code` is not wrong, only frozen.
+ */
+function carriedCode(t: Transcript): boolean {
+  return t.perceptions.some((p) => p.hasCode || (p.code !== undefined && looksCoded(p.code)));
+}
+
+/**
  * A control only a visitor with an account is offered. A fresh browser is never
  * given a way out of a session it does not have, which is what makes this the one
  * cheap proof that a signup worked.
@@ -348,23 +394,32 @@ export function endStateSeen(t: Transcript): string | undefined {
       // could get started; it does not show the API being used, and this is the
       // check that decides whether 40 points for finishing are paid out.
       //
-      // Two ways of having seen it, because the trimmed text is not the page. A
-      // sign quoted out of `everywhere` is a call the model was shown; `hasCode`
-      // is a call the page carried, read off the whole document before the text
-      // was trimmed. 28 of the 31 perceptions taken since the sidebar fix are
-      // still at the 2800 cap, every one of them on docs.stripe.com, so on those
-      // pages the first route answers about a prefix and the second about a page.
+      // Three ways of having seen one, in descending order of how well we can show
+      // our work. A sign in `everywhere` is a call in the copy the model was
+      // actually shown, so the line it sits on is quotable straight back. `code`
+      // is the code-shaped lines of the untrimmed page, kept as evidence and
+      // judged here rather than at capture time, which is what lets a widened rule
+      // re-read runs already on disk. `hasCode` is that same judgement made at
+      // capture time by whatever the rule was then: no line to quote, and honoured
+      // only because the runs recorded before `code` existed still earned their
+      // letters.
       //
-      // The second route cannot invent a quote, and it is not given one. A run
-      // credited this way says "a code example on the page" instead, because the
-      // honest form of that sentence is the one that does not pretend to have the
-      // line in hand.
-      const code = sign(everywhere, CALL_SIGNS);
-      const carried = t.perceptions.some((p) => p.hasCode);
+      // The trimmed text is not the page, which is why the first route cannot be
+      // the only one. 28 of the 31 perceptions taken since the sidebar fix are
+      // still at the 2800 cap, every one of them on docs.stripe.com, so on those
+      // pages it answers about a prefix while the other two answer about a page.
       const key = sign(everywhere, KEY_ROUTE_SIGNS);
-      if (!key || !(code || carried)) return undefined;
+      if (!key) return undefined;
+      const shown = sign(everywhere, CALL_SIGNS);
+      const kept = t.perceptions.map((p) => p.code ?? "").find((c) => looksCoded(c));
+      const quote = shown
+        ? codeLine(t.perceptions.map(pageTextRaw).join("\n"), shown)
+        : kept
+          ? codeSign(kept)
+          : undefined;
+      if (!quote && !t.perceptions.some((p) => p.hasCode)) return undefined;
       return `${
-        code ? `a code example ("${code.trim()}")` : "a code example on the page"
+        quote ? `a code example ("${quote}")` : "a code example on the page"
       } and a route to a key ("${key}")`;
     }
     case "purchase": {
@@ -561,7 +616,7 @@ export function grade(t: Transcript): Verdict {
   // is credited for them whether or not the URL we picked happened to pass one.
   if (
     priceSeen ||
-    (t.action === "integrate" && (integrateKeyInfo(text) || t.perceptions.some((p) => p.hasCode))) ||
+    (t.action === "integrate" && (integrateKeyInfo(text) || carriedCode(t))) ||
     (t.action === "contact" && /@|contact/.test(text) && !cta.deadEndOnly && !handoff) ||
     (t.action === "book" && /\b(mon|tue|wed|thu|fri|sat|sun)\w*\b|\bam\b|\bpm\b|available/.test(text))
   ) {

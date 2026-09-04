@@ -373,9 +373,17 @@ const PRICE_RE =
  * currency and every pricing page has one. A long option cannot be prose: the
  * space in front rules out "word--word" used as a dash, and the letter straight
  * after the dashes rules out " -- " used as one.
+ *
+ * The `\d*` in front of the three call keywords is a line-number gutter. A docs
+ * site that numbers its code block puts those numbers in the text: on
+ * resend.com/docs the first line of the sample reads `1import { Resend } from
+ * 'resend';`, and a word boundary before `import` cannot survive the digit glued
+ * to it. Measured on run mtllev6z, where that line was the only call on the page
+ * and this rule walked past it while the grader's own sign list, which asks for no
+ * boundary at all, caught it.
  */
 const CODE_RE =
-  /curl\s+(?:-|https?:\/\/)|authorization:\s*bearer|\bimport\s*\{|\brequire\(\s*['"]|\bfetch\(\s*['"`]|(?:^|\s)-H\s+['"]|\s--[a-z][a-z0-9-]{2,}/i;
+  /curl\s+(?:-|https?:\/\/)|authorization:\s*bearer|\b\d*import\s*\{|\b\d*require\(\s*['"]|\b\d*fetch\(\s*['"`]|(?:^|\s)-H\s+['"]|\s--[a-z][a-z0-9-]{2,}/i;
 
 /**
  * Does this text carry a price a machine could read?
@@ -414,6 +422,100 @@ const INSTALL_RE =
  */
 export function looksCoded(text: string): boolean {
   return CODE_RE.test(text.replace(INSTALL_RE, " "));
+}
+
+/**
+ * How much of a page's code is kept as evidence, and how much of one line of it a
+ * verdict may quote.
+ *
+ * Neither is a prompt budget: none of this is ever sent to the model. The first is
+ * disk, sized off the pages this has been measured on. Of 280 code-shaped lines in
+ * the stored runs the median is 22 characters and the ninetieth percentile 78, so
+ * twelve hundred holds a page's worth several times over; the longest single line
+ * seen is 681, a `stripe checkout sessions create` with eight `-d` arguments on it,
+ * and it has to fit whole for the reason in harvestCode. The second is a sentence
+ * in a verdict, and is about what a person can read in one.
+ */
+const MAX_CODE = 1200;
+const MAX_QUOTE = 200;
+
+/**
+ * A line that might be code, judged on its shape rather than on what it says.
+ *
+ * Deliberately looser than CODE_RE, and the gap between them is the whole point.
+ * CODE_RE is a judgement; this is a net. What the net gathers is stored, and the
+ * judgement is made afterwards, again on every read, by whatever CODE_RE has
+ * since become. A line this catches and CODE_RE rejects costs a few bytes. A line
+ * this misses is gone, and nothing downstream can bring it back.
+ *
+ * Shape only, because English is made of words and code is made of punctuation.
+ * A brace, a bracket up against a word, an arrow, a quote after a colon or an
+ * equals, a shell prompt, a flag, a trailing continuation, a URL scheme.
+ */
+const CODEISH = /[{};]|\w\(|=>|[:=]\s*["'`]|(?:^|\s)[$>]\s|\s-{1,2}[A-Za-z]|\\$|:\/\//;
+
+/**
+ * The code-shaped lines of a page, deduplicated and bounded: evidence, not an
+ * answer.
+ *
+ * Why keep this when hasCode already answers the question. Because hasCode is an
+ * answer, and answers go stale. A verdict is recomputed from the transcript on
+ * every read, precisely so that correcting the grader corrects every run it has
+ * ever graded, and a boolean written at capture time is the one thing in a
+ * transcript that cannot be recomputed. This product has already been bitten by
+ * it: the same audit of docs.stripe.com/, same two steps, same claim from the
+ * model, sits on the board at C 60 and at A 100, because CODE_RE learned what a
+ * command line was in between and the earlier run's page was no longer there to
+ * re-read. This is that page, kept.
+ *
+ * Lines whole or not at all, which the measurement insisted on. Truncating them to
+ * 200 characters first lost 7 of the 38 stored perceptions that carry a call, all
+ * of them docs.stripe.com/, whose `$ stripe checkout sessions create` line does
+ * not prove itself code until character 230: the shell prompt and the `-d` flags
+ * before that are shape and not proof. A line kept as a fragment is a line that
+ * can be re-read and answered wrongly, which is worse than one that was never
+ * kept, so a line too long for the remaining budget is skipped and the next is
+ * tried.
+ *
+ * Bounded from the top all the same, and that is the honest limit here: a page
+ * whose only call sits below twelve hundred characters of JSON is stored without
+ * it. That is why hasCode stays alongside, read off the whole document with no cap
+ * at all, so today's letter never depends on this budget. What depends on it is
+ * tomorrow's.
+ */
+export function harvestCode(text: string): string | undefined {
+  const kept: string[] = [];
+  const seen = new Set<string>();
+  let budget = MAX_CODE;
+  for (const raw of text.split("\n")) {
+    const line = raw.trim();
+    if (!line || line.length + 1 > budget || seen.has(line) || !CODEISH.test(line)) continue;
+    seen.add(line);
+    kept.push(line);
+    budget -= line.length + 1;
+  }
+  return kept.length ? kept.join("\n") : undefined;
+}
+
+/**
+ * The one line of this text a reader could copy, or nothing when there is none.
+ *
+ * looksCoded decides; this says which line decided it, so a verdict can quote
+ * the page rather than assert about it. The whole text is judged first, because a
+ * sign can straddle a line break (a `curl` ending in a backslash, its flags
+ * underneath) and the decision must not narrow just because the quote wants one
+ * line. When no single line carries it, the match itself is the quote, with its
+ * whitespace collapsed: that match spans the break by definition, and a verdict
+ * reads as one sentence.
+ */
+export function codeSign(text: string): string | undefined {
+  if (!looksCoded(text)) return undefined;
+  for (const raw of text.split("\n")) {
+    const line = raw.trim();
+    if (line && looksCoded(line)) return line.slice(0, MAX_QUOTE);
+  }
+  const m = CODE_RE.exec(text.replace(INSTALL_RE, " "));
+  return m ? m[0].trim().replace(/\s+/g, " ").slice(0, MAX_QUOTE) : undefined;
 }
 
 /**
@@ -844,6 +946,11 @@ export async function perceive(page: AgentPage, timeoutMs = PERCEIVE_MS): Promis
     // free tier ran out of daily tokens mid run and nobody ever said done. Those
     // letters are withheld on the board already. Truncation was not their problem.
     hasCode: looksCoded(zones.body) || undefined,
+    // The lines behind that boolean, so the boolean stops being the last word.
+    // Everything else in a transcript is evidence and gets re-read every time a
+    // run is opened; hasCode was a conclusion, and a run graded before CODE_RE
+    // knew what a command line was keeps its old letter forever. See harvestCode.
+    code: harvestCode(zones.body),
   };
 }
 

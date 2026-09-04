@@ -819,6 +819,64 @@ describe("grade: a claim of having finished", () => {
     assert.match(v.summary, /code example calling the API/);
   });
 
+  /*
+   * The evidence field, and why it exists. `hasCode` answered the question at
+   * capture time; `code` carries the lines the answer came from, so a rule that
+   * learns something later gets to re-read the page rather than inherit a verdict.
+   * Measured: the same audit of docs.stripe.com/, same two steps, same claim from
+   * the model, sat on the local board at C 60 and at A 100 at once, because CODE_RE
+   * learned what a command line was in between and the older run's page was gone.
+   */
+  it("re-reads the page's own lines, so a call is credited on evidence and not on a boolean", () => {
+    const t = transcript({
+      action: "integrate",
+      perceptions: [
+        page({
+          url: "https://docs.stripe.com/api/authentication",
+          title: "Authentication",
+          // Trimmed text carries nothing, and no conclusion was recorded either.
+          text: `${PROSE}\nAuthenticate with your secret key.`,
+          code: 'curl https://api.stripe.com/v1/charges \\\n  -u "sk_test_123:"',
+        }),
+      ],
+      declaredDone: true,
+    });
+    const v = grade(t);
+    assert.ok(v.milestones.includes("completed-action"));
+    assert.equal(v.grade, "A");
+    // And because the lines are there, the verdict quotes them instead of
+    // asserting about the page.
+    assert.match(endStateSeen(t)!, /a code example \("curl https:\/\/api\.stripe\.com\/v1\/charges/);
+  });
+
+  it("credits the key half from the stored lines as well", () => {
+    const cut = page({
+      text: PROSE,
+      code: "import { Resend } from 'resend';\nconst resend = new Resend(process.env.RESEND_API_KEY);",
+    });
+    assert.ok(grade(transcript({ action: "integrate", perceptions: [cut] })).milestones.includes("found-key-info"));
+  });
+
+  it("does not let lines that only look like code stand in for a call", () => {
+    // The net gathers on shape, so this is what most of what it gathers looks
+    // like. The judgement is still CODE_RE's, made here rather than at capture.
+    const t = transcript({
+      action: "integrate",
+      perceptions: [
+        page({
+          url: "https://docs.stripe.com/api/authentication",
+          title: "Authentication",
+          text: `${PROSE}\nAuthenticate with your secret key.`,
+          code: "timeout: 30;\nPlans start at $20/mo;",
+        }),
+      ],
+      declaredDone: true,
+    });
+    const v = grade(t);
+    assert.ok(!v.milestones.includes("completed-action"));
+    assert.match(v.summary, /code example calling the API/);
+  });
+
   it("takes the payment step as the end of a purchase, by its fields or by its URL", () => {
     const fields = transcript({
       action: "purchase",

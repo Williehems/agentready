@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   capped,
+  codeSign,
   fingerprint,
+  harvestCode,
   looksCoded,
   marks,
   modalIsOpen,
@@ -1191,5 +1193,92 @@ describe("looksCoded: a command line", () => {
     ]) {
       assert.equal(looksCoded(text), false, text);
     }
+  });
+});
+
+/**
+ * The net, not the judgement. These pin the two properties the judgement depends
+ * on: what it gathers can still be judged later, and what it gathers is whole.
+ */
+describe("harvestCode: the page's code, kept for a later reader", () => {
+  it("keeps a long line whole rather than trimming it to the proof", () => {
+    // Measured on docs.stripe.com: this line does not prove itself code until
+    // character 230, so a harvest that trimmed lines to 200 stored a fragment
+    // that re-reads as prose. Seven of thirty-eight stored perceptions were lost
+    // that way.
+    const long = `$ stripe checkout sessions create -d "line_items[0][price]=price_123" -d "line_items[0][quantity]=1" -d "mode=payment" -d "success_url=https://example.com/success" -d "cancel_url=https://example.com/cancel" --confirm`;
+    assert.ok(long.length > 200, "the fixture has to be longer than the old cap");
+    const kept = harvestCode(`Quickstart\n${long}\nRead more in the guide.`);
+    assert.equal(kept, long);
+    assert.equal(looksCoded(kept ?? ""), true, "a harvest that cannot be judged is no evidence");
+  });
+
+  it("says nothing about a page made of sentences", () => {
+    assert.equal(
+      harvestCode(
+        "Send your first email in minutes.\nOur platform is trusted by thousands of developers.\nStart free, no credit card required.",
+      ),
+      undefined,
+    );
+  });
+
+  it("keeps one copy of a line the page repeats", () => {
+    const kept = harvestCode(
+      ["import { Resend } from 'resend';", "Node.js", "import { Resend } from 'resend';", "Next.js"].join(
+        "\n",
+      ),
+    );
+    assert.equal(kept, "import { Resend } from 'resend';");
+  });
+
+  it("skips a line too long for what is left rather than cutting it", () => {
+    // Fill the budget with lines that fit, then offer an enormous one and a small
+    // one after it. The enormous line is passed over; the small one still lands.
+    const filler = Array.from({ length: 12 }, (_, i) => `const a${i} = fetch("/api/${i}");`);
+    const enormous = `x(${"y".repeat(1200)});`;
+    const kept = harvestCode([...filler, enormous, "curl https://api.example.com/v1/ping"].join("\n"));
+    assert.ok(kept, "the filler alone should have been harvested");
+    assert.ok(!kept?.includes("yyy"), "an oversized line must be skipped, not truncated");
+    assert.ok(kept?.includes("curl https://api.example.com/v1/ping"), "and the next line still counts");
+    assert.ok(kept.length <= 1200, `harvest ran to ${kept.length} characters`);
+  });
+
+  it("gathers what CODE_RE would reject, because the judgement comes later", () => {
+    // The whole reason the net is looser than the rule: today this page reads as
+    // having no call, and tomorrow's rule gets to see it anyway.
+    const page = "Config\ntimeout: 30;\nRetries are automatic.";
+    assert.equal(looksCoded(page), false);
+    assert.equal(harvestCode(page), "timeout: 30;");
+  });
+});
+
+describe("codeSign: quoting the page instead of asserting about it", () => {
+  it("quotes the line that is code, not the first line that mentions it", () => {
+    // Verbatim from docs.stripe.com/api. The prose sentence carries the sign and
+    // is the first line to do so; putting it under the words "a code example"
+    // would be a misquote.
+    const page = [
+      "By default, the Stripe API Docs demonstrate using curl to interact with the API over HTTP.",
+      "Select one of our official client libraries to see examples in code.",
+      "curl https://api.stripe.com/v1/charges \\",
+      '  -u "sk_test_123:"',
+    ].join("\n");
+    assert.equal(codeSign(page), "curl https://api.stripe.com/v1/charges \\");
+  });
+
+  it("reads a call through the line-number gutter a docs site renders", () => {
+    // resend.com/docs numbers its code block, so the digit is glued to the
+    // keyword: `1import { Resend } from 'resend';`.
+    assert.equal(codeSign("1import { Resend } from 'resend';"), "1import { Resend } from 'resend';");
+  });
+
+  it("falls back to the match, on one line, when the sign straddles the break", () => {
+    const quote = codeSign("Authorization:\nBearer sk_test_123");
+    assert.equal(quote, "Authorization:\nBearer".replace(/\s+/g, " "));
+    assert.ok(!quote?.includes("\n"), "a verdict reads as one sentence");
+  });
+
+  it("says nothing when the page carries no call", () => {
+    assert.equal(codeSign("Pricing\nStarts at $20 per month.\nnpm install our-sdk"), undefined);
   });
 });
