@@ -1,7 +1,7 @@
 import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { grade, type Transcript } from "@/lib/grade";
-import type { ActionKind, Verdict } from "@/lib/types";
+import type { ActionKind, StepRecord, Verdict } from "@/lib/types";
 
 /**
  * The runs already on disk, read back.
@@ -33,6 +33,12 @@ export interface StoredRun {
   };
   transcript: Transcript;
   verdict: Verdict;
+  /**
+   * Every turn the agent took, with its own reasoning, when the run was recorded
+   * by a build that kept them. Absent on the runs behind this feature: their
+   * reasoning went out live and was never written down.
+   */
+  steps?: StepRecord[];
   /** Screenshot paths under /runs, newest run only: these are not committed. */
   shots?: string[];
   /** True when this run ships with the repo rather than having been run here. */

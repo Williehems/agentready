@@ -13,7 +13,7 @@ import {
 } from "./perceive";
 import { grade, type Transcript } from "./grade";
 import { closeClient, launchBrowser, releaseSession } from "./solari";
-import type { ActionKind, Perception, RunEvent, StepAction } from "./types";
+import type { ActionKind, Perception, RunEvent, StepAction, StepRecord } from "./types";
 
 export const MAX_STEPS = 10;
 
@@ -1033,6 +1033,29 @@ export async function runAudit(opts: RunOptions): Promise<void> {
   const operated: string[] = [];
 
   /**
+   * Every turn, kept.
+   *
+   * `operated` is the grader's record and it is a list of strings: five moves that
+   * landed, in order, saying nothing about why any of them was chosen. The
+   * reasoning existed all along and went out over the wire to whoever happened to
+   * be watching live, then was thrown away the moment they closed the tab. So a
+   * run that walked five pages and gave up could be reopened afterwards only as
+   * five strings, and the question a witness actually asks, why did it do that,
+   * had no answer on disk.
+   *
+   * Outside the Transcript, for the same reason `spend` is: the grader must never
+   * be able to read the agent's own account of itself. A site does not earn points
+   * because the model narrated it kindly.
+   */
+  const steps: StepRecord[] = [];
+
+  /** Said once, to the watcher and to the record, so the two cannot drift. */
+  const step = async (s: StepRecord): Promise<void> => {
+    steps.push(s);
+    await emit({ type: "step", ...s });
+  };
+
+  /**
    * Withdraw a failure from a click that turned out to have worked.
    *
    * Playwright's ten-second click timeout is not the last word. A link that opens
@@ -1357,8 +1380,7 @@ export async function runAudit(opts: RunOptions): Promise<void> {
       if (d.action === "done" || d.action === "give_up") {
         declaredDone = d.action === "done";
         gaveUp = d.action === "give_up";
-        await emit({
-          type: "step",
+        await step({
           index: stepCount,
           action: d.action,
           reasoning: d.reasoning,
@@ -1420,8 +1442,7 @@ export async function runAudit(opts: RunOptions): Promise<void> {
         };
       }
 
-      await emit({
-        type: "step",
+      await step({
         index: stepCount,
         action: d.action as StepAction,
         target: el?.name,
@@ -1592,10 +1613,12 @@ export async function runAudit(opts: RunOptions): Promise<void> {
     //
     // `spend` sits outside the transcript rather than in it, so that grading cannot
     // reach what our account cost. What we paid to look at a site must never move
-    // that site's grade.
+    // that site's grade. `steps` is out here for the same reason: it carries the
+    // model's own reasoning, and a site is graded on what it did to the agent, not
+    // on how the agent talked about it.
     await writeFile(
       path.join(shotDir, "transcript.json"),
-      JSON.stringify({ runId, url, action, spend, transcript, verdict }, null, 2),
+      JSON.stringify({ runId, url, action, spend, steps, transcript, verdict }, null, 2),
     ).catch(() => {});
 
     for (const b of verdict.blockers) {

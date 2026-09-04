@@ -71,23 +71,34 @@ export interface Verdict {
   sessionId?: string;
 }
 
+/**
+ * One turn of the loop, as it happened: what the agent chose, on what, why, and
+ * whether the page allowed it.
+ *
+ * The same shape goes out over the wire as a `step` event and into the stored
+ * record, because the live narration and the written record are the same facts
+ * and there is no reason for the two to drift.
+ */
+export interface StepRecord {
+  index: number;
+  action: StepAction;
+  /** The control it addressed, by accessible name, or absent for done and give_up. */
+  target?: string;
+  value?: string;
+  /** The model's own one-line account of the move, in the first person. */
+  reasoning: string;
+  ok: boolean;
+  error?: string;
+  screenshot?: string;
+  url: string;
+  elementCount: number;
+  at: number;
+}
+
 export type RunEvent =
   | { type: "start"; runId: string; url: string; action: ActionKind; task: string; at: number }
   | { type: "status"; message: string; at: number }
-  | {
-      type: "step";
-      index: number;
-      action: StepAction;
-      target?: string;
-      value?: string;
-      reasoning: string;
-      ok: boolean;
-      error?: string;
-      screenshot?: string;
-      url: string;
-      elementCount: number;
-      at: number;
-    }
+  | ({ type: "step" } & StepRecord)
   | { type: "milestone"; milestone: Milestone; at: number }
   | { type: "blocker"; blocker: Blocker; detail: string; at: number }
   | { type: "verdict"; verdict: Verdict; at: number }

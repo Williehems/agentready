@@ -128,10 +128,58 @@ export default async function RunPage({ params }: { params: { id: string } }) {
           )}
         </Panel>
 
+        {run.steps?.length ? (
+          <Panel
+            title={`Why it moved (${run.steps.length})`}
+            note="Each turn as the agent took it, in its own words. This is the model's account of itself and the grader never reads it: a site is graded on what it did to the agent, not on how the agent spoke about it."
+          >
+            <ol className="divide-y divide-line">
+              {run.steps.map((s) => (
+                <li key={s.index} className="flex gap-3 px-4 py-3">
+                  <span className="w-6 shrink-0 text-[11px] text-dim">{s.index}</span>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-baseline gap-x-2">
+                      <span className="text-[12px] font-bold text-text">{s.action}</span>
+                      {s.target ? (
+                        <span className="min-w-0 truncate text-[12px] text-muted">
+                          &ldquo;{s.target}&rdquo;
+                        </span>
+                      ) : null}
+                      {s.value ? (
+                        <span className="text-[11px] text-dim">with {s.value}</span>
+                      ) : null}
+                      {/* Only the refusals are coloured. A run of green ticks down the
+                          side of a page teaches the reader nothing, and the thing they
+                          came for is the one row where the page said no. */}
+                      {s.ok ? null : (
+                        <span className="text-[10px] uppercase tracking-widest text-grade-f">
+                          refused
+                        </span>
+                      )}
+                    </div>
+                    {s.reasoning ? (
+                      <p className="mt-1 text-[13px] leading-relaxed text-text/80">
+                        {s.reasoning}
+                      </p>
+                    ) : null}
+                    {s.error ? (
+                      <p className="mt-1 text-[11px] leading-relaxed text-muted">{s.error}</p>
+                    ) : null}
+                  </div>
+                </li>
+              ))}
+            </ol>
+          </Panel>
+        ) : null}
+
         <div className="grid gap-6 sm:grid-cols-2">
           <Panel
             title={`What it did (${(t.operated ?? []).length})`}
-            note="Only the moves that landed. A step 0 that reads the page and declares itself finished operates nothing."
+            note={
+              run.steps?.length
+                ? "Only the moves that landed. A step 0 that reads the page and declares itself finished operates nothing."
+                : "Only the moves that landed, which is all this run kept: it predates the step log, so why the agent chose each one was only ever visible live."
+            }
           >
             {(t.operated ?? []).length === 0 ? (
               <p className="px-4 py-4 text-[13px] text-muted">Nothing was operated.</p>
