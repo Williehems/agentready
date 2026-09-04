@@ -1,0 +1,878 @@
+{
+  "runId": "mtn07gt9-t98sjn",
+  "url": "https://docs.stripe.com/",
+  "action": "integrate",
+  "spend": {
+    "calls": 2,
+    "promptTokens": 5925,
+    "completionTokens": 218,
+    "heldMs": 0,
+    "remainingTokens": 2885,
+    "limitTokens": 8000
+  },
+  "steps": [
+    {
+      "index": 1,
+      "action": "click",
+      "target": "APIs & SDKs",
+      "reasoning": "Open the APIs & SDKs section to find code examples and API key info",
+      "ok": true,
+      "screenshot": "/runs/mtn07gt9-t98sjn/00.jpg",
+      "url": "https://docs.stripe.com/",
+      "elementCount": 60,
+      "at": 1788529391014
+    },
+    {
+      "index": 2,
+      "action": "done",
+      "reasoning": "Seen a code example ($ stripe coupons create --amount-off 2000 --currency \"usd\") and text indicating API keys are loaded after signing in or creating an account.",
+      "ok": true,
+      "screenshot": "/runs/mtn07gt9-t98sjn/01.jpg",
+      "url": "https://docs.stripe.com/",
+      "elementCount": 60,
+      "at": 1788529393931
+    }
+  ],
+  "transcript": {
+    "action": "integrate",
+    "startUrl": "https://docs.stripe.com/",
+    "perceptions": [
+      {
+        "url": "https://docs.stripe.com/",
+        "title": "Stripe Documentation",
+        "elements": [
+          {
+            "index": 1,
+            "role": "link",
+            "name": "Skip to content",
+            "ref": "e8",
+            "href": "\"#main-content\""
+          },
+          {
+            "index": 2,
+            "role": "link",
+            "name": "Skip to content",
+            "ref": "e13",
+            "href": "/"
+          },
+          {
+            "index": 3,
+            "role": "button",
+            "name": "Search /",
+            "ref": "e28"
+          },
+          {
+            "index": 4,
+            "role": "textbox",
+            "name": "Search",
+            "ref": "e34"
+          },
+          {
+            "index": 5,
+            "role": "button",
+            "name": "Stripe Assistant",
+            "ref": "e36"
+          },
+          {
+            "index": 6,
+            "role": "link",
+            "name": "Create account",
+            "ref": "e42",
+            "href": "https://dashboard.stripe.com/register"
+          },
+          {
+            "index": 7,
+            "role": "link",
+            "name": "Sign in",
+            "ref": "e43",
+            "href": "https://dashboard.stripe.com/login?redirect=https%3A%2F%2Fdocs.stripe.com%2F"
+          },
+          {
+            "index": 8,
+            "role": "tab",
+            "name": "Get started",
+            "ref": "e50"
+          },
+          {
+            "index": 9,
+            "role": "tab",
+            "name": "Payments",
+            "ref": "e58"
+          },
+          {
+            "index": 10,
+            "role": "tab",
+            "name": "Revenue",
+            "ref": "e66"
+          },
+          {
+            "index": 11,
+            "role": "tab",
+            "name": "Platforms and marketplaces",
+            "ref": "e74"
+          },
+          {
+            "index": 12,
+            "role": "tab",
+            "name": "Money management",
+            "ref": "e82"
+          },
+          {
+            "index": 13,
+            "role": "tab",
+            "name": "Developer resources",
+            "ref": "e90"
+          },
+          {
+            "index": 14,
+            "role": "button",
+            "name": "APIs & SDKs",
+            "ref": "e96"
+          },
+          {
+            "index": 15,
+            "role": "button",
+            "name": "Help",
+            "ref": "e99"
+          },
+          {
+            "index": 16,
+            "role": "link",
+            "name": "Get started with Stripe",
+            "ref": "e119",
+            "href": "/get-started/use-cases"
+          },
+          {
+            "index": 17,
+            "role": "link",
+            "name": "Explore all products",
+            "ref": "e127",
+            "href": "\"#products\""
+          },
+          {
+            "index": 18,
+            "role": "link",
+            "name": "create an account",
+            "ref": "e136",
+            "href": "https://dashboard.stripe.com/register"
+          },
+          {
+            "index": 19,
+            "role": "link",
+            "name": "Test cards",
+            "ref": "e141",
+            "href": "/testing#cards"
+          },
+          {
+            "index": 20,
+            "role": "button",
+            "name": "4242 4242 4242 4242",
+            "ref": "e159"
+          },
+          {
+            "index": 21,
+            "role": "link",
+            "name": "Accept payments online",
+            "ref": "e177",
+            "href": "/get-started/use-cases/startup"
+          },
+          {
+            "index": 22,
+            "role": "link",
+            "name": "Collect payments with invoices",
+            "ref": "e181",
+            "href": "/get-started/use-cases/invoices"
+          },
+          {
+            "index": 23,
+            "role": "link",
+            "name": "Accept payments in-person",
+            "ref": "e185",
+            "href": "/get-started/use-cases/in-person-payments"
+          },
+          {
+            "index": 24,
+            "role": "link",
+            "name": "Sell subscriptions",
+            "ref": "e195",
+            "href": "/get-started/use-cases/saas-subscriptions"
+          },
+          {
+            "index": 25,
+            "role": "link",
+            "name": "Offer usage-based pricing",
+            "ref": "e199",
+            "href": "/billing/how-metronome-works-with-stripe"
+          },
+          {
+            "index": 26,
+            "role": "link",
+            "name": "Set up the customer portal",
+            "ref": "e203",
+            "href": "/no-code/customer-portal"
+          },
+          {
+            "index": 27,
+            "role": "link",
+            "name": "Set up your development environment",
+            "ref": "e213",
+            "href": "/get-started/development-environment"
+          },
+          {
+            "index": 28,
+            "role": "link",
+            "name": "Build on Stripe with AI",
+            "ref": "e217",
+            "href": "/agents"
+          },
+          {
+            "index": 29,
+            "role": "link",
+            "name": "Integration quickstarts",
+            "ref": "e221",
+            "href": "/quickstarts"
+          },
+          {
+            "index": 30,
+            "role": "button",
+            "name": "Start a payment",
+            "ref": "e235"
+          },
+          {
+            "index": 31,
+            "role": "button",
+            "name": "Start a checkout session",
+            "ref": "e236"
+          },
+          {
+            "index": 32,
+            "role": "button",
+            "name": "Create a customer",
+            "ref": "e237"
+          },
+          {
+            "index": 33,
+            "role": "button",
+            "name": "Sell a product",
+            "ref": "e238"
+          },
+          {
+            "index": 34,
+            "role": "button",
+            "name": "Issue coupons",
+            "ref": "e239"
+          },
+          {
+            "index": 35,
+            "role": "button",
+            "name": "Get your balance",
+            "ref": "e240"
+          },
+          {
+            "index": 36,
+            "role": "button",
+            "name": "Manage taxes",
+            "ref": "e241"
+          },
+          {
+            "index": 37,
+            "role": "button",
+            "name": "\"\\\"https://example.com/success\\\"\"",
+            "ref": "e256"
+          },
+          {
+            "index": 38,
+            "role": "link",
+            "name": "\"https://example.com/success\"",
+            "href": "https://example.com/success"
+          },
+          {
+            "index": 39,
+            "role": "link",
+            "name": "\"https://checkout.stripe.com/c/pay/xxxxxx\"",
+            "href": "https://checkout.stripe.com/c/pay/xxxxxx"
+          },
+          {
+            "index": 40,
+            "role": "link",
+            "name": "Download Stripe CLI",
+            "href": "/cli/install"
+          },
+          {
+            "index": 41,
+            "role": "button",
+            "name": "Download Stripe CLI",
+            "ref": "e507"
+          },
+          {
+            "index": 42,
+            "role": "link",
+            "name": "Learn more about Checkout Sessions",
+            "ref": "e512",
+            "href": "/payments/checkout"
+          },
+          {
+            "index": 43,
+            "role": "button",
+            "name": "Browse by product",
+            "ref": "e524"
+          },
+          {
+            "index": 44,
+            "role": "link",
+            "name": "Payments Online payments",
+            "ref": "e534",
+            "href": "/payments"
+          },
+          {
+            "index": 45,
+            "role": "link",
+            "name": "Managed Payments Stripe merchant of record solution",
+            "ref": "e537",
+            "href": "/payments/managed-payments"
+          },
+          {
+            "index": 46,
+            "role": "link",
+            "name": "Terminal In-person and omnichannel payments",
+            "ref": "e540",
+            "href": "/terminal"
+          },
+          {
+            "index": 47,
+            "role": "link",
+            "name": "Radar Fraud and risk management",
+            "ref": "e543",
+            "href": "/radar"
+          },
+          {
+            "index": 48,
+            "role": "link",
+            "name": "Climate Carbon removal",
+            "ref": "e546",
+            "href": "/climate"
+          },
+          {
+            "index": 49,
+            "role": "link",
+            "name": "Identity Online identity verification",
+            "ref": "e549",
+            "href": "/identity"
+          },
+          {
+            "index": 50,
+            "role": "link",
+            "name": "Financial Connections Connect users' financial accounts",
+            "ref": "e552",
+            "href": "/financial-connections"
+          },
+          {
+            "index": 51,
+            "role": "link",
+            "name": "Crypto Accept, onramp, or pay out in crypto",
+            "ref": "e555",
+            "href": "/crypto"
+          },
+          {
+            "index": 52,
+            "role": "link",
+            "name": "Billing Subscriptions and recurring payments",
+            "ref": "e562",
+            "href": "/billing"
+          },
+          {
+            "index": 53,
+            "role": "link",
+            "name": "Tax Sales tax and VAT automation",
+            "ref": "e565",
+            "href": "/tax"
+          },
+          {
+            "index": 54,
+            "role": "link",
+            "name": "Revenue Recognition Accounting automation",
+            "ref": "e568",
+            "href": "/billing/revenue-recognition"
+          },
+          {
+            "index": 55,
+            "role": "link",
+            "name": "Sigma Custom reports",
+            "ref": "e571",
+            "href": "/data/sigma"
+          },
+          {
+            "index": 56,
+            "role": "link",
+            "name": "Data Pipeline Data warehouse sync",
+            "ref": "e574",
+            "href": "/data/access-data-in-warehouse"
+          },
+          {
+            "index": 57,
+            "role": "link",
+            "name": "Atlas Startup incorporation",
+            "ref": "e577",
+            "href": "/atlas"
+          },
+          {
+            "index": 58,
+            "role": "link",
+            "name": "Connect Embedded finance for platforms",
+            "ref": "e584",
+            "href": "/connect"
+          },
+          {
+            "index": 59,
+            "role": "link",
+            "name": "Account onboarding Onboard and verify connected accounts",
+            "ref": "e587",
+            "href": "/connect/onboarding"
+          },
+          {
+            "index": 60,
+            "role": "link",
+            "name": "Platform payments Process payments for connected accounts",
+            "ref": "e590",
+            "href": "/connect/charges"
+          }
+        ],
+        "text": "Skip to content\nSearch\n/\nAsk AI\nCreate account\nSign in\nGet started\nPayments\nRevenue\nPlatforms and marketplaces\nMoney management\nDeveloper resources\nAPIs & SDKs\nHelp\nDocumentation\nExplore our guides and examples to integrate Stripe.\nGet started with Stripe\nExplore all products\nSign in or create an account to load your test API keys.\nTest cards\n4242 4242 4242 4242\nPayments\nAccept payments online\nCollect payments with invoices\nAccept payments in-person\nRevenue\nSell subscriptions\nOffer usage-based pricing\nSet up the customer portal\nDevelopers\nSet up your development environment\nBuild on Stripe with AI\nIntegration quickstarts\nTry it out\nStart a payment\nStart a checkout session\nCreate a customer\nSell a product\nIssue coupons\nGet your balance\nManage taxes\n$ stripe checkout sessions create -d \"line_items[0][price_data][currency]=usd\" -d \"line_items[0][price_data][product_data][name]=Your Product\" -d \"line_items[0][price_data][unit_amount]=1000\" -d \"line_items[0][quantity]=1\" --mode payment --success-url \"https://example.com/success\"\n{\n\"id\"\n: \n\"xxxxxx\"\n,\n\"object\"\n: \n\"checkout.session\"\n,\n\"after_expiration\"\n: \nnull\n,\n\"allow_promotion_codes\"\n: \nnull\n,\n\"amount_subtotal\"\n: \n1000\n,\n\"amount_total\"\n: \n1000\n,\n\"automatic_tax\"\n: \n{… 2 items}\n,\n\"billing_address_collection\"\n: \nnull\n,\n\"cancel_url\"\n: \nnull\n,\n\"client_reference_id\"\n: \nnull\n,\n\"consent\"\n: \nnull\n,\n\"consent_collection\"\n: \nnull\n,\n\"created\"\n: \n1788529377\n,\n\"currency\"\n: \n\"usd\"\n,\n\"custom_fields\"\n: \n[]\n,\n\"custom_text\"\n: \n{… 2 items}\n,\n\"customer\"\n: \nnull\n,\n\"customer_creation\"\n: \n\"if_required\"\n,\n\"customer_details\"\n: \nnull\n,\n\"customer_email\"\n: \nnull\n,\n\"expires_at\"\n: \n1788615777\n,\n\"invoice\"\n: \nnull\n,\n\"invoice_creation\"\n: \nnull\n,\n\"livemode\"\n: \nfalse\n,\n\"locale\"\n: \nnull\n,\n\"metadata\"\n: \n{}\n,\n\"mode\"\n: \n\"payment\"\n,\n\"payment_intent\"\n: \nnull\n,\n\"payment_link\"\n: \nnull\n,\n\"payment_method_collection\"\n: \n\"always\"\n,\n\"payment_method_options\"\n: \n{}\n,\n\"payment_method_types\": [\n\"card\"\n,\n],\n\"payment_status\"\n: \n\"unpaid\"\n,\n\"phone_number_collection\": {\n\"enabled\"\n: \nfalse\n,\n},\n\"recovered_from\"\n: \nnull\n,\n\"setup_intent\"\n: \nnull\n,\n\"shipping_address_collection\"\n: \nnull\n,\n\"shipping_cost\"\n: \nnull\n,\n\"shipping_details\"\n: \nnull\n,\n\"shipping_options\"\n: \n[]\n,\n\"status\"\n: \n\"open\"\n,\n\"success_url\"\n: \n\"https://example.com/success\"\n,\n\"ui_mode\"\n: \n\"hosted\"\n,\n\"url\"\n: \n\"https://checkout.stripe.com/c/pay/xxxxxx\"\n,\n}\nSign in to edit real requests.\nLearn more about Checkout Sessions\nBrowse by product\nPayments\nPayments\nOnline payments\nManaged Payments\nStripe merchant of record solution\nTerminal\nIn-person and omnichannel payments\nRadar\nFraud and risk management\nClimate\nCarbon removal\nIdentity\nOnline identity verification\nFinancial Connections\nConnect users' financial accounts\nCrypto\nAccept, onramp, or pay out in crypto\nRevenue\nBilling\nSubscriptions and recurring payments",
+        "jsGated": false,
+        "hasPrice": false,
+        "hasCode": true
+      },
+      {
+        "url": "https://docs.stripe.com/",
+        "title": "Stripe Documentation",
+        "elements": [
+          {
+            "index": 1,
+            "role": "link",
+            "name": "Skip to content",
+            "ref": "e8",
+            "href": "\"#main-content\""
+          },
+          {
+            "index": 2,
+            "role": "link",
+            "name": "Skip to content",
+            "ref": "e13",
+            "href": "/"
+          },
+          {
+            "index": 3,
+            "role": "button",
+            "name": "Search /",
+            "ref": "e28"
+          },
+          {
+            "index": 4,
+            "role": "textbox",
+            "name": "Search",
+            "ref": "e34"
+          },
+          {
+            "index": 5,
+            "role": "button",
+            "name": "Stripe Assistant",
+            "ref": "e36"
+          },
+          {
+            "index": 6,
+            "role": "link",
+            "name": "Create account",
+            "ref": "e42",
+            "href": "https://dashboard.stripe.com/register"
+          },
+          {
+            "index": 7,
+            "role": "link",
+            "name": "Sign in",
+            "ref": "e43",
+            "href": "https://dashboard.stripe.com/login?redirect=https%3A%2F%2Fdocs.stripe.com%2F"
+          },
+          {
+            "index": 8,
+            "role": "tab",
+            "name": "Get started",
+            "ref": "e50"
+          },
+          {
+            "index": 9,
+            "role": "tab",
+            "name": "Payments",
+            "ref": "e58"
+          },
+          {
+            "index": 10,
+            "role": "tab",
+            "name": "Revenue",
+            "ref": "e66"
+          },
+          {
+            "index": 11,
+            "role": "tab",
+            "name": "Platforms and marketplaces",
+            "ref": "e74"
+          },
+          {
+            "index": 12,
+            "role": "tab",
+            "name": "Money management",
+            "ref": "e82"
+          },
+          {
+            "index": 13,
+            "role": "tab",
+            "name": "Developer resources",
+            "ref": "e90"
+          },
+          {
+            "index": 14,
+            "role": "button",
+            "name": "APIs & SDKs",
+            "ref": "e96"
+          },
+          {
+            "index": 15,
+            "role": "button",
+            "name": "Help",
+            "ref": "e99"
+          },
+          {
+            "index": 16,
+            "role": "link",
+            "name": "Get started with Stripe",
+            "ref": "e119",
+            "href": "/get-started/use-cases"
+          },
+          {
+            "index": 17,
+            "role": "link",
+            "name": "Explore all products",
+            "ref": "e127",
+            "href": "\"#products\""
+          },
+          {
+            "index": 18,
+            "role": "link",
+            "name": "create an account",
+            "ref": "e136",
+            "href": "https://dashboard.stripe.com/register"
+          },
+          {
+            "index": 19,
+            "role": "link",
+            "name": "Test cards",
+            "ref": "e141",
+            "href": "/testing#cards"
+          },
+          {
+            "index": 20,
+            "role": "button",
+            "name": "4242 4242 4242 4242",
+            "ref": "e159"
+          },
+          {
+            "index": 21,
+            "role": "link",
+            "name": "Accept payments online",
+            "ref": "e177",
+            "href": "/get-started/use-cases/startup"
+          },
+          {
+            "index": 22,
+            "role": "link",
+            "name": "Collect payments with invoices",
+            "ref": "e181",
+            "href": "/get-started/use-cases/invoices"
+          },
+          {
+            "index": 23,
+            "role": "link",
+            "name": "Accept payments in-person",
+            "ref": "e185",
+            "href": "/get-started/use-cases/in-person-payments"
+          },
+          {
+            "index": 24,
+            "role": "link",
+            "name": "Sell subscriptions",
+            "ref": "e195",
+            "href": "/get-started/use-cases/saas-subscriptions"
+          },
+          {
+            "index": 25,
+            "role": "link",
+            "name": "Offer usage-based pricing",
+            "ref": "e199",
+            "href": "/billing/how-metronome-works-with-stripe"
+          },
+          {
+            "index": 26,
+            "role": "link",
+            "name": "Set up the customer portal",
+            "ref": "e203",
+            "href": "/no-code/customer-portal"
+          },
+          {
+            "index": 27,
+            "role": "link",
+            "name": "Set up your development environment",
+            "ref": "e213",
+            "href": "/get-started/development-environment"
+          },
+          {
+            "index": 28,
+            "role": "link",
+            "name": "Build on Stripe with AI",
+            "ref": "e217",
+            "href": "/agents"
+          },
+          {
+            "index": 29,
+            "role": "link",
+            "name": "Integration quickstarts",
+            "ref": "e221",
+            "href": "/quickstarts"
+          },
+          {
+            "index": 30,
+            "role": "button",
+            "name": "Start a payment",
+            "ref": "e235"
+          },
+          {
+            "index": 31,
+            "role": "button",
+            "name": "Start a checkout session",
+            "ref": "e236"
+          },
+          {
+            "index": 32,
+            "role": "button",
+            "name": "Create a customer",
+            "ref": "e237"
+          },
+          {
+            "index": 33,
+            "role": "button",
+            "name": "Sell a product",
+            "ref": "e238"
+          },
+          {
+            "index": 34,
+            "role": "button",
+            "name": "Issue coupons",
+            "ref": "e239"
+          },
+          {
+            "index": 35,
+            "role": "button",
+            "name": "Get your balance",
+            "ref": "e240"
+          },
+          {
+            "index": 36,
+            "role": "button",
+            "name": "Manage taxes",
+            "ref": "e241"
+          },
+          {
+            "index": 37,
+            "role": "button",
+            "name": "\"\\\"usd\\\"\"",
+            "ref": "e256"
+          },
+          {
+            "index": 38,
+            "role": "link",
+            "name": "Download Stripe CLI",
+            "href": "/cli/install"
+          },
+          {
+            "index": 39,
+            "role": "button",
+            "name": "Download Stripe CLI",
+            "ref": "e507"
+          },
+          {
+            "index": 40,
+            "role": "link",
+            "name": "Learn more about coupons",
+            "ref": "e732",
+            "href": "/billing/subscriptions/coupons"
+          },
+          {
+            "index": 41,
+            "role": "button",
+            "name": "Browse by product",
+            "ref": "e524"
+          },
+          {
+            "index": 42,
+            "role": "link",
+            "name": "Payments Online payments",
+            "ref": "e534",
+            "href": "/payments"
+          },
+          {
+            "index": 43,
+            "role": "link",
+            "name": "Managed Payments Stripe merchant of record solution",
+            "ref": "e537",
+            "href": "/payments/managed-payments"
+          },
+          {
+            "index": 44,
+            "role": "link",
+            "name": "Terminal In-person and omnichannel payments",
+            "ref": "e540",
+            "href": "/terminal"
+          },
+          {
+            "index": 45,
+            "role": "link",
+            "name": "Radar Fraud and risk management",
+            "ref": "e543",
+            "href": "/radar"
+          },
+          {
+            "index": 46,
+            "role": "link",
+            "name": "Climate Carbon removal",
+            "ref": "e546",
+            "href": "/climate"
+          },
+          {
+            "index": 47,
+            "role": "link",
+            "name": "Identity Online identity verification",
+            "ref": "e549",
+            "href": "/identity"
+          },
+          {
+            "index": 48,
+            "role": "link",
+            "name": "Financial Connections Connect users' financial accounts",
+            "ref": "e552",
+            "href": "/financial-connections"
+          },
+          {
+            "index": 49,
+            "role": "link",
+            "name": "Crypto Accept, onramp, or pay out in crypto",
+            "ref": "e555",
+            "href": "/crypto"
+          },
+          {
+            "index": 50,
+            "role": "link",
+            "name": "Billing Subscriptions and recurring payments",
+            "ref": "e562",
+            "href": "/billing"
+          },
+          {
+            "index": 51,
+            "role": "link",
+            "name": "Tax Sales tax and VAT automation",
+            "ref": "e565",
+            "href": "/tax"
+          },
+          {
+            "index": 52,
+            "role": "link",
+            "name": "Revenue Recognition Accounting automation",
+            "ref": "e568",
+            "href": "/billing/revenue-recognition"
+          },
+          {
+            "index": 53,
+            "role": "link",
+            "name": "Sigma Custom reports",
+            "ref": "e571",
+            "href": "/data/sigma"
+          },
+          {
+            "index": 54,
+            "role": "link",
+            "name": "Data Pipeline Data warehouse sync",
+            "ref": "e574",
+            "href": "/data/access-data-in-warehouse"
+          },
+          {
+            "index": 55,
+            "role": "link",
+            "name": "Atlas Startup incorporation",
+            "ref": "e577",
+            "href": "/atlas"
+          },
+          {
+            "index": 56,
+            "role": "link",
+            "name": "Connect Embedded finance for platforms",
+            "ref": "e584",
+            "href": "/connect"
+          },
+          {
+            "index": 57,
+            "role": "link",
+            "name": "Account onboarding Onboard and verify connected accounts",
+            "ref": "e587",
+            "href": "/connect/onboarding"
+          },
+          {
+            "index": 58,
+            "role": "link",
+            "name": "Platform payments Process payments for connected accounts",
+            "ref": "e590",
+            "href": "/connect/charges"
+          },
+          {
+            "index": 59,
+            "role": "link",
+            "name": "Platform payouts Send funds to connected accounts",
+            "ref": "e593",
+            "href": "/connect/payouts-connected-accounts"
+          },
+          {
+            "index": 60,
+            "role": "link",
+            "name": "Platform management Monitor and manage your platform",
+            "ref": "e596",
+            "href": "/connect/dashboard/understand-your-connect-business"
+          }
+        ],
+        "text": "Skip to content\nSearch\n/\nAsk AI\nCreate account\nSign in\nGet started\nPayments\nRevenue\nPlatforms and marketplaces\nMoney management\nDeveloper resources\nAPIs & SDKs\nHelp\nDocumentation\nExplore our guides and examples to integrate Stripe.\nGet started with Stripe\nExplore all products\nSign in or create an account to load your test API keys.\nTest cards\n4242 4242 4242 4242\nPayments\nAccept payments online\nCollect payments with invoices\nAccept payments in-person\nRevenue\nSell subscriptions\nOffer usage-based pricing\nSet up the customer portal\nDevelopers\nSet up your development environment\nBuild on Stripe with AI\nIntegration quickstarts\nTry it out\nStart a payment\nStart a checkout session\nCreate a customer\nSell a product\nIssue coupons\nGet your balance\nManage taxes\n$ stripe coupons create --amount-off 2000 --currency \"usd\"\n{\n\"id\"\n: \n\"xxxxxx\"\n,\n\"object\"\n: \n\"coupon\"\n,\n\"amount_off\"\n: \n2000\n,\n\"created\"\n: \n1788529377\n,\n\"currency\"\n: \n\"usd\"\n,\n\"duration\"\n: \n\"once\"\n,\n\"duration_in_months\"\n: \nnull\n,\n\"livemode\"\n: \nfalse\n,\n\"max_redemptions\"\n: \nnull\n,\n\"metadata\"\n: \n{}\n,\n\"name\"\n: \nnull\n,\n\"percent_off\"\n: \nnull\n,\n\"redeem_by\"\n: \nnull\n,\n\"times_redeemed\"\n: \n0\n,\n\"valid\"\n: \ntrue\n,\n}\nSign in to edit real requests.\nLearn more about coupons\nBrowse by product\nPayments\nPayments\nOnline payments\nManaged Payments\nStripe merchant of record solution\nTerminal\nIn-person and omnichannel payments\nRadar\nFraud and risk management\nClimate\nCarbon removal\nIdentity\nOnline identity verification\nFinancial Connections\nConnect users' financial accounts\nCrypto\nAccept, onramp, or pay out in crypto\nRevenue\nBilling\nSubscriptions and recurring payments\nTax\nSales tax and VAT automation\nRevenue Recognition\nAccounting automation\nSigma\nCustom reports\nData Pipeline\nData warehouse sync\nAtlas\nStartup incorporation\nPlatforms and marketplaces\nConnect\nEmbedded finance for platforms\nAccount onboarding\nOnboard and verify connected accounts\nPlatform payments\nProcess payments for connected accounts\nPlatform payouts\nSend funds to connected accounts\nPlatform management\nMonitor and manage your platform\nTax forms\nTax reporting and filing\nMoney management\nIssuing\nCard creation\nTreasury\nBuilding blocks for financial services\nCapital\nBusiness financing\nPrebuilt components\nPayment Links\nNo-code payments\nCheckout\nPrebuilt, Stripe-hosted checkout page\nElements\nSecure frontend UI components\nAPI\nStripe.js\nCLI\niOS\nAndroid\nReact Native",
+        "jsGated": false,
+        "hasPrice": false,
+        "hasCode": true
+      }
+    ],
+    "declaredDone": true,
+    "gaveUp": false,
+    "operated": [
+      "click \"APIs & SDKs\""
+    ],
+    "failures": [],
+    "stepCount": 2,
+    "stealth": true,
+    "priceOnHome": false,
+    "handoffs": []
+  },
+  "verdict": {
+    "grade": "A",
+    "score": 100,
+    "milestones": [
+      "understood-offering",
+      "found-key-info",
+      "found-cta",
+      "completed-action"
+    ],
+    "blockers": [],
+    "steps": 2,
+    "summary": "An AI agent completed \"integrate the api\" in 2 steps.",
+    "sessionId": "ip-10-0-10-9:ce45b43b-9019-4add-9af6-ea1b512a664c:cmtkgry6v00njo801yp7b3ine:1788529370727.iJjN-E9Co0mbKWOQ0wGKtg"
+  }
+}
