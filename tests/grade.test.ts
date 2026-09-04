@@ -877,6 +877,49 @@ describe("grade: a claim of having finished", () => {
     assert.match(v.summary, /code example calling the API/);
   });
 
+  it("does not pay for finishing out of a sentence that mentions curl", () => {
+    // Verbatim from docs.stripe.com/api, which is why this was found: `curl ` is a
+    // call sign matched against the page as one string, so a sentence of English
+    // supplied the half of the proof that pays 40 points. That page also carries
+    // the real call, so nothing was graded wrongly, but the credit was standing on
+    // the prose and here there is no real call to stand on instead.
+    const t = transcript({
+      action: "integrate",
+      perceptions: [
+        page({
+          url: "https://docs.stripe.com/api",
+          title: "API reference",
+          text: `${PROSE}\nBy default, the Stripe API Docs demonstrate using curl to interact with the API over HTTP.\nAuthenticate with your secret key.`,
+        }),
+      ],
+      declaredDone: true,
+    });
+    const v = grade(t);
+    assert.ok(!v.milestones.includes("completed-action"));
+    assert.match(v.summary, /code example calling the API/);
+  });
+
+  it("reads past the prose mention to the call the page actually shows", () => {
+    const t = transcript({
+      action: "integrate",
+      perceptions: [
+        page({
+          url: "https://docs.stripe.com/api",
+          title: "API reference",
+          text: [
+            PROSE,
+            "By default, the Stripe API Docs demonstrate using curl to interact with the API over HTTP.",
+            "Authenticate with your secret key.",
+            `await fetch("https://api.stripe.com/v1/charges", { method: "POST" });`,
+          ].join("\n"),
+        }),
+      ],
+      declaredDone: true,
+    });
+    assert.ok(grade(t).milestones.includes("completed-action"));
+    assert.match(endStateSeen(t)!, /a code example \("await fetch\("https:\/\/api\.stripe\.com/);
+  });
+
   it("takes the payment step as the end of a purchase, by its fields or by its URL", () => {
     const fields = transcript({
       action: "purchase",

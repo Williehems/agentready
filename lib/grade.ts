@@ -203,8 +203,11 @@ function pageText(p: Perception): string {
  * carrying the sign and no code at all, and it is the first such line on the page:
  * quoting it would put a sentence of English in front of a reader under the words
  * "a code example". The real `curl https://api.stripe.com/v1/charges` is further
- * down. When no line containing the sign reads as code, the sign itself is
- * returned, which claims exactly as much as it can support.
+ * down.
+ *
+ * When no line containing the sign reads as code, the sign itself comes back, which
+ * cannot pass looksCoded on its own. That is the caller's answer to the question it
+ * asked: this sign is on the page and no line carrying it is code.
  */
 function codeLine(hay: string, needle: string, max = 200): string {
   const want = needle.toLowerCase();
@@ -395,14 +398,24 @@ export function endStateSeen(t: Transcript): string | undefined {
       // check that decides whether 40 points for finishing are paid out.
       //
       // Three ways of having seen one, in descending order of how well we can show
-      // our work. A sign in `everywhere` is a call in the copy the model was
-      // actually shown, so the line it sits on is quotable straight back. `code`
-      // is the code-shaped lines of the untrimmed page, kept as evidence and
-      // judged here rather than at capture time, which is what lets a widened rule
-      // re-read runs already on disk. `hasCode` is that same judgement made at
-      // capture time by whatever the rule was then: no line to quote, and honoured
-      // only because the runs recorded before `code` existed still earned their
-      // letters.
+      // our work. A sign in the copy the model was actually shown, on a line that
+      // reads as code, is a call we can quote straight back. `code` is the
+      // code-shaped lines of the untrimmed page, kept as evidence and judged here
+      // rather than at capture time, which is what lets a widened rule re-read runs
+      // already on disk. `hasCode` is that same judgement made at capture time by
+      // whatever the rule was then: no line to quote, and honoured only because the
+      // runs recorded before `code` existed still earned their letters.
+      //
+      // The line has to read as code, and that is a rule about credit and not only
+      // about wording. `curl ` is in CALL_SIGNS and was matched against the page as
+      // one long string, so docs.stripe.com/api, which opens "the Stripe API Docs
+      // demonstrate using curl to interact with the API over HTTP", supplied the
+      // call half of a finish out of a sentence of English. It happens to also
+      // carry the real `curl https://api.stripe.com/v1/charges`, so nothing was
+      // wrongly graded there, but the credit was standing on the prose. Every sign
+      // is tried and the first one sitting on a line that reads as code wins, so a
+      // page whose only `curl ` is prose while its real call is a `fetch(` is
+      // quoted by its `fetch(`.
       //
       // The trimmed text is not the page, which is why the first route cannot be
       // the only one. 28 of the 31 perceptions taken since the sidebar fix are
@@ -410,13 +423,12 @@ export function endStateSeen(t: Transcript): string | undefined {
       // pages it answers about a prefix while the other two answer about a page.
       const key = sign(everywhere, KEY_ROUTE_SIGNS);
       if (!key) return undefined;
-      const shown = sign(everywhere, CALL_SIGNS);
+      const raw = t.perceptions.map(pageTextRaw).join("\n");
+      const shown = CALL_SIGNS.filter((s) => everywhere.includes(s))
+        .map((s) => codeLine(raw, s))
+        .find(looksCoded);
       const kept = t.perceptions.map((p) => p.code ?? "").find((c) => looksCoded(c));
-      const quote = shown
-        ? codeLine(t.perceptions.map(pageTextRaw).join("\n"), shown)
-        : kept
-          ? codeSign(kept)
-          : undefined;
+      const quote = shown ?? (kept ? codeSign(kept) : undefined);
       if (!quote && !t.perceptions.some((p) => p.hasCode)) return undefined;
       return `${
         quote ? `a code example ("${quote}")` : "a code example on the page"
