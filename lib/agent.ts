@@ -4,7 +4,7 @@ import { z } from "zod";
 import { ACTIONS, handoffLabel, isDeadEndHref } from "./actions";
 import { Deadline, TimeoutError, withTimeout } from "./deadline";
 import { groqJson, type ChatOptions } from "./groq";
-import { type AgentPage, looksPriced, perceive, renderState } from "./perceive";
+import { type AgentPage, fingerprint, looksPriced, perceive, renderState } from "./perceive";
 import { grade, type Transcript } from "./grade";
 import { closeClient, launchBrowser, releaseSession } from "./solari";
 import type { ActionKind, Perception, RunEvent, StepAction } from "./types";
@@ -280,19 +280,51 @@ export const STOPPED_BY_YOU = "you stopped the run";
  */
 type Meter = Pick<ChatOptions, "onUsage" | "onWait">;
 
+/**
+ * What the run remembers between decisions: what it has done, and what turned
+ * out to do nothing.
+ *
+ * The second half is the expensive one. A click can land perfectly and still
+ * leave the page exactly as it was, and "click X (ok)" reads to the model as
+ * progress. Measured on docs.stripe.com: the same nav control was clicked on
+ * three consecutive steps, each reported ok, and the run ran out of steps with
+ * the answer two clicks away. So a step that moved nothing is written down as
+ * having moved nothing, and named again as something not to choose.
+ *
+ * This changes what the agent spends its steps on and nothing about what the
+ * site is charged with: the loop blocker still comes from the grader reading
+ * four identical perceptions, not from anything recorded here.
+ */
+interface Memory {
+  history: string[];
+  /** Actions, phrased as the prompt names them, that left the page unchanged. */
+  inert: Set<string>;
+}
+
 async function decide(
   p: Perception,
   goal: string,
   stepsLeft: number,
-  history: string[],
+  memory: Memory,
   timeoutMs: number,
   isFirst: boolean,
   runId: string,
   meter: Meter = {},
   signal?: AbortSignal,
 ): Promise<Outcome> {
-  const recent = history.length
-    ? `\n\nWHAT YOU HAVE ALREADY TRIED:\n${history.slice(-5).join("\n")}`
+  const recent = memory.history.length
+    ? `\n\nWHAT YOU HAVE ALREADY TRIED:\n${memory.history.slice(-5).join("\n")}`
+    : "";
+  // Kept separate from the history above, and not truncated to the last five,
+  // because a dead end found early is exactly the one worth still knowing about
+  // late: the loop this exists to break was three attempts at one control.
+  const inert = memory.inert.size
+    ? `\n\nTHESE LEFT THE PAGE EXACTLY AS IT WAS. DO NOT CHOOSE THEM AGAIN:\n${Array.from(
+        memory.inert,
+      )
+        .slice(-6)
+        .map((k) => `- ${k}`)
+        .join("\n")}`
     : "";
   const state = renderState(p, stepsLeft, isFirst ? TEXT_FIRST : TEXT_LATER);
 
@@ -300,7 +332,7 @@ async function decide(
     const raw = await groqJson<unknown>(
       [
         { role: "system", content: systemPrompt(runId) },
-        { role: "user", content: `TASK: ${goal}\n\n${state}${recent}` },
+        { role: "user", content: `TASK: ${goal}\n\n${state}${recent}${inert}` },
       ],
       { maxTokens: 600, temperature: 0.1, timeoutMs, ...meter, signal },
     );
@@ -653,7 +685,15 @@ export async function runAudit(opts: RunOptions): Promise<void> {
 
   const perceptions: Perception[] = [];
   const failures: string[] = [];
-  const history: string[] = [];
+  const memory: Memory = { history: [], inert: new Set() };
+  /**
+   * The last click, and the page as it stood the moment before it. Read once, on
+   * the next perception, which is the earliest anything can know whether it did
+   * something. Only clicks and back are tracked: typing is meant to leave the
+   * page where it is, and a scroll moves the viewport without moving anything
+   * this can see.
+   */
+  let pending: { key: string; before: string; line: number } | undefined;
   let declaredDone = false;
   let gaveUp = false;
   let stepCount = 0;
@@ -839,6 +879,16 @@ export async function runAudit(opts: RunOptions): Promise<void> {
       const p = await perceive(page, clock.cap(PERCEIVE_MS));
       perceptions.push(p);
 
+      // Did the last click do anything? This is the only place that can answer,
+      // and the answer goes back into the prompt rather than into the verdict.
+      if (pending) {
+        if (fingerprint(p) === pending.before) {
+          memory.inert.add(pending.key);
+          memory.history[pending.line] = `- ${pending.key} (ok, but nothing on the page changed)`;
+        }
+        pending = undefined;
+      }
+
       // The screenshot is taken before the action, so each step shows exactly
       // what the agent was looking at when it made that decision.
       let shot: string | undefined;
@@ -868,7 +918,7 @@ export async function runAudit(opts: RunOptions): Promise<void> {
         p,
         spec.goal,
         maxSteps - i,
-        history,
+        memory,
         clock.cap(DECIDE_MS),
         i === 0,
         runId,
@@ -934,9 +984,14 @@ export async function runAudit(opts: RunOptions): Promise<void> {
       }
       if (error && !wedged) failures.push(error);
       stalls = wedged ? stalls + 1 : 0;
-      history.push(
-        `- ${d.action}${el ? ` "${el.name}"` : ""}${error ? ` FAILED: ${error}` : " (ok)"}`,
-      );
+      const move = `${d.action}${el ? ` "${el.name}"` : ""}`;
+      memory.history.push(`- ${move}${error ? ` FAILED: ${error}` : " (ok)"}`);
+      // Left for the next perception to judge. A click that failed is already
+      // named as a failure, and saying it also changed nothing would charge the
+      // same step twice for one thing that went wrong.
+      if (!error && (d.action === "click" || d.action === "back")) {
+        pending = { key: move, before: fingerprint(p), line: memory.history.length - 1 };
+      }
 
       await emit({
         type: "step",

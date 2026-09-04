@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { modalIsOpen, parseAriaSnapshot, renderState } from "../lib/perceive";
+import { fingerprint, modalIsOpen, parseAriaSnapshot, renderState } from "../lib/perceive";
 import type { Perception } from "../lib/types";
 
 /**
@@ -664,5 +664,79 @@ describe("renderState", () => {
 
   it("says the tree was empty rather than printing nothing at all", () => {
     assert.match(renderState(perception(), 3), /the accessibility tree is empty/);
+  });
+});
+
+/**
+ * Two things read this: the grader, which calls four identical perceptions a
+ * loop, and the run itself, which compares one step to the next to tell whether
+ * the click it just made did anything. So "changed" has to mean changed to a
+ * visitor, and nothing else.
+ */
+describe("fingerprint: what counts as the same page", () => {
+  const page = (over: Partial<Perception> = {}): Perception => ({
+    url: "https://docs.stripe.com/agents#tools",
+    title: "Agent developer tools",
+    elements: [
+      { index: 1, role: "button", name: "APIs & SDKs", ref: "e12" },
+      { index: 2, role: "textbox", name: "Search", ref: "e13" },
+    ],
+    text: "Build with Stripe.",
+    jsGated: false,
+    hasPrice: false,
+    ...over,
+  });
+
+  /** The property the run depends on: refs are minted per snapshot. */
+  it("is unmoved by new refs, so an untouched page is not mistaken for a changed one", () => {
+    const fresh = page({
+      elements: [
+        { index: 1, role: "button", name: "APIs & SDKs", ref: "e88" },
+        { index: 2, role: "textbox", name: "Search", ref: "e89" },
+      ],
+    });
+    assert.equal(fingerprint(page()), fingerprint(fresh));
+  });
+
+  it("is unmoved by prose, so a page whose text rotates on its own is not read as progress", () => {
+    assert.equal(fingerprint(page()), fingerprint(page({ text: "Something else entirely." })));
+  });
+
+  it("changes when a control goes live, which is the quietest real change there is", () => {
+    const off = page({
+      elements: [{ index: 1, role: "button", name: "Submit", disabled: true }],
+    });
+    const on = page({ elements: [{ index: 1, role: "button", name: "Submit" }] });
+    assert.notEqual(fingerprint(off), fingerprint(on));
+  });
+
+  it("changes when a field holds something, because filling a form is progress", () => {
+    const filled = page({
+      elements: [
+        { index: 1, role: "button", name: "APIs & SDKs", ref: "e12" },
+        { index: 2, role: "textbox", name: "Search", ref: "e13", value: "webhooks" },
+      ],
+    });
+    assert.notEqual(fingerprint(page()), fingerprint(filled));
+  });
+
+  it("changes when the page offers something it did not before", () => {
+    const more = page({
+      elements: [
+        { index: 1, role: "button", name: "APIs & SDKs", ref: "e12" },
+        { index: 2, role: "textbox", name: "Search", ref: "e13" },
+        { index: 3, role: "link", name: "Quickstart", ref: "e14" },
+      ],
+    });
+    assert.notEqual(fingerprint(page()), fingerprint(more));
+  });
+
+  /**
+   * Measured on docs.stripe.com: the nav control at #tools was clicked on three
+   * consecutive steps, each landing cleanly, and every perception after the
+   * first came back byte-identical. That is what the run now tells the model.
+   */
+  it("holds still across a click that landed and did nothing", () => {
+    assert.equal(fingerprint(page()), fingerprint(page()));
   });
 });

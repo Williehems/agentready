@@ -7,6 +7,7 @@ import type {
   Verdict,
 } from "./types";
 import { ACTIONS, handoffLabel, isDeadEndHref } from "./actions";
+import { fingerprint } from "./perceive";
 
 /**
  * Grading is deterministic on purpose. The agent loop produces a transcript;
@@ -175,37 +176,6 @@ function deadEndHandoff(t: Transcript): string | undefined {
   return (t.handoffs ?? []).find((u) => u && !u.startsWith("about:") && isDeadEndHref(u));
 }
 
-/**
- * What the agent was looking at, reduced to something comparable.
- *
- * The URL alone is not it. A booking flow inside one modal advances through four
- * screens without the address ever changing, and judging that by URL calls a
- * working flow a stuck loop: seen live on a real spa site, where the element
- * count went 37 to 51 while the URL stood still. So a loop is the page not
- * changing, and this is what "not changing" means.
- *
- * What the fields hold counts as part of it. Filling in a form is progress even
- * though it moves nothing else on the page, and a run that types a name, a phone
- * number and a note would otherwise look identical at every step and earn a loop
- * blocker for working correctly. Retyping the same value into the same field
- * still leaves this string unchanged, which is the case the blocker is for.
- *
- * So does whether a control can be operated. A submit going live is the single
- * most important way a page can change, and nothing else about it moves: same
- * roles, same names, same values, same count. The prompt now tells the agent to
- * look once more at a form whose submit is disabled by a challenge that clears
- * itself, and without this that patience reads back as going in circles.
- */
-function fingerprint(p: Perception): string {
-  return [
-    p.url,
-    p.title,
-    p.elements.length,
-    p.elements
-      .map((e) => `${e.role}:${e.name}:${e.value ?? ""}:${e.disabled ? "off" : "on"}`)
-      .join("|"),
-  ].join("~");
-}
 
 export function grade(t: Transcript): Verdict {
   const text = textOf(t);
