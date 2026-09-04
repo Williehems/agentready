@@ -25,6 +25,14 @@ export interface Transcript {
   declaredDone: boolean;
   /** Whether the model gave up explicitly. */
   gaveUp: boolean;
+  /**
+   * Moves that landed, in order, written as `click "Send booking"`.
+   *
+   * Evidence for the kind of finish a page cannot show on its own: a booking
+   * submitted and met with silence is a finished booking by that task's own terms,
+   * and the press is the only record there is of it.
+   */
+  operated?: string[];
   /** Steps that failed to execute, with their error text. */
   failures: string[];
   stepCount: number;
@@ -215,6 +223,130 @@ function deadEndHandoff(t: Transcript): string | undefined {
   return (t.handoffs ?? []).find((u) => u && !u.startsWith("about:") && isDeadEndHref(u));
 }
 
+/**
+ * The two halves an `integrate` run is sent to find. Drawn from
+ * docs.stripe.com/keys, which carries both many times over: `curl` blocks beside
+ * prose about where a secret key comes from.
+ */
+const CODE_SIGNS = [
+  "curl ", "npm install", "pip install", "pip3 install", "yarn add", "go get ",
+  "composer require", "authorization: bearer", "import ", "require(", "fetch(",
+  "sk_test", "sk_live",
+];
+
+const KEY_ROUTE_SIGNS = [
+  "api key", "secret key", "publishable key", "access token", "bearer token",
+  "client secret", "personal access token",
+];
+
+/** The payment step, in the words checkout pages use for it. */
+const CHECKOUT_SIGNS = [
+  "card number", "credit card", "debit card", "cardholder", "cvv", "cvc",
+  "expiry", "expiration date", "billing address", "payment method",
+  "order summary", "pay now", "place order", "complete purchase",
+  "proceed to payment", "secure checkout",
+];
+
+const CHECKOUT_URLS = ["checkout", "/cart", "payment", "/order", "/pay"];
+
+/**
+ * A control only a visitor with an account is offered. A fresh browser is never
+ * given a way out of a session it does not have, which is what makes this the one
+ * cheap proof that a signup worked.
+ */
+const SIGNED_IN_SIGNS = ["log out", "logout", "sign out", "signout"];
+
+const ACCOUNT_MADE_SIGNS = [
+  "account created", "account has been created", "your account is ready",
+  "welcome to your dashboard", "you're all set", "you are all set",
+  "registration complete", "registration successful",
+];
+
+/**
+ * A site saying something has reached it. Receipts only: no bare "thank you",
+ * which sits in footers on pages where nothing was submitted at all.
+ */
+const RESPONSE_SIGNS = [
+  "we have received", "we've received", "we have your request", "request received",
+  "booking received", "message received", "booking confirmed", "appointment confirmed",
+  "your booking is", "your appointment is", "we will be in touch", "we'll be in touch",
+  "we will get back to you", "we'll get back to you", "successfully booked",
+  "reference number", "confirmation number",
+];
+
+/** Words that make a control the one that sends a booking rather than one on the way to it. */
+const SUBMIT_WORDS = ["submit", "send", "book", "confirm", "request", "reserve", "schedule"];
+
+
+/**
+ * The evidence for the one milestone the agent awards itself, or nothing when the
+ * pages it saw never showed it.
+ *
+ * `done` is the model's own word about its own work, and it carries 40 of the 100
+ * points. Every other milestone here is read off what was on screen; this one was
+ * not, which left the score only as honest as the model's account of itself. In 24
+ * runs the milestone has never been awarded, so no measured pass is being taken
+ * away. What is being closed is the hole a model could walk an A through by
+ * declaring done on a page that showed nothing of the kind.
+ *
+ * Generous on purpose, because the opposite mistake is just as bad: each test
+ * below is the ordinary end state of its own task in the words real pages use for
+ * it. A claim that cannot be corroborated costs the 40 points and is said plainly
+ * in the summary, and it is never turned into a finding against the site, because
+ * a model misreporting its own run is our failure and not the site's.
+ */
+export function endStateSeen(t: Transcript): string | undefined {
+  const last = t.perceptions[t.perceptions.length - 1];
+  if (!last) return undefined;
+  const here = pageText(last);
+  const everywhere = t.perceptions.map(pageText).join("\n");
+  const landed = t.operated ?? [];
+  const sign = (hay: string, signs: string[]) => signs.find((s) => hay.includes(s));
+  const receipt = sign(here, RESPONSE_SIGNS);
+
+  switch (t.action) {
+    case "integrate": {
+      const code = sign(everywhere, CODE_SIGNS);
+      const key = sign(everywhere, KEY_ROUTE_SIGNS);
+      return code && key
+        ? `a code example ("${code.trim()}") and a route to a key ("${key}")`
+        : undefined;
+    }
+    case "purchase": {
+      const step = sign(here, CHECKOUT_SIGNS);
+      if (step) return `the payment step ("${step}")`;
+      const url = CHECKOUT_URLS.find((u) => last.url.toLowerCase().includes(u));
+      return url ? `the checkout page (${last.url})` : undefined;
+    }
+    case "signup": {
+      // A page holding out for a code from an inbox is a wall, not an account,
+      // whatever else it says on it. See VERIFY_SIGNS for the run that prompted it.
+      if (VERIFY_SIGNS.some((s) => here.includes(s))) return undefined;
+      const out = sign(here, SIGNED_IN_SIGNS);
+      if (out) return `a session of its own ("${out}")`;
+      const made = sign(here, ACCOUNT_MADE_SIGNS);
+      return made ? `the site saying so ("${made}")` : undefined;
+    }
+    case "book": {
+      if (receipt) return `the site's answer ("${receipt}")`;
+      // Submitting and being told nothing is a finished booking by this task's own
+      // terms, so the press itself is the evidence. Guarded on the run having done
+      // some work first, because a "Book now" in the nav clicked at step 1 is the
+      // way to a booking form and not a booking.
+      const pressed = landed.find(
+        (m) => m.startsWith("click ") && SUBMIT_WORDS.some((w) => m.toLowerCase().includes(w)),
+      );
+      return pressed && landed.length >= 3 ? `a booking pressed through (${pressed})` : undefined;
+    }
+    case "contact": {
+      // The typed message, read off the control that holds it. This is the whole
+      // of what the task asks for, since it stops short of sending.
+      const filled = last.elements.find((e) => e.role === "textbox" && e.value);
+      if (filled) return `a message typed into ${filled.role} "${filled.name}"`;
+      return receipt ? `the site's answer ("${receipt}")` : undefined;
+    }
+  }
+}
 
 export function grade(t: Transcript): Verdict {
   const text = textOf(t);
@@ -225,6 +357,15 @@ export function grade(t: Transcript): Verdict {
   const firstPerception = t.perceptions[0];
   const everGated = t.perceptions.some((p) => p.jsGated);
   const alwaysGated = t.perceptions.length > 0 && t.perceptions.every((p) => p.jsGated);
+
+  /**
+   * Whether the run finished, as opposed to having said it did. Everything that
+   * used to read `declaredDone` reads this instead: a claim we cannot see the end
+   * state for suppresses no blocker either, since the walls it would hide are
+   * exactly the walls a false claim is made in front of.
+   */
+  const proof = t.declaredDone ? endStateSeen(t) : undefined;
+  const finished = t.declaredDone && proof !== undefined;
 
   // --- blockers ---
 
@@ -283,7 +424,7 @@ export function grade(t: Transcript): Verdict {
   // having met nothing.
   const pages = t.perceptions.map(pageText);
   const sentSign = VERIFY_SENT_SIGNS.find((s) => pages.some((page) => page.includes(s)));
-  if ((verifySign || sentSign) && !t.declaredDone) {
+  if ((verifySign || sentSign) && !finished) {
     blockers.push({
       blocker: "verification-gate",
       detail: `The flow required something only an inbox or a phone can supply ("${verifySign ?? sentSign}"): a code to read back, or a link to open. An agent has neither, so the action ends here however good the rest of the site is.`,
@@ -313,14 +454,14 @@ export function grade(t: Transcript): Verdict {
     });
   }
 
-  if (AUTH_SIGNS.some((s) => text.includes(s)) && !t.declaredDone) {
+  if (AUTH_SIGNS.some((s) => text.includes(s)) && !finished) {
     blockers.push({
       blocker: "auth-gate",
       detail: "An account was required before the action could be reached.",
     });
   }
 
-  if (t.failures.length >= 2 && !t.declaredDone) {
+  if (t.failures.length >= 2 && !finished) {
     blockers.push({
       blocker: "form-stall",
       detail: `The agent could not operate ${t.failures.length} elements it selected: ${t.failures
@@ -336,7 +477,7 @@ export function grade(t: Transcript): Verdict {
   // landing clicks the page cannot change, and reading that back as the site
   // going in circles blames it for our failure. Seen live: three hung clicks in
   // a row produced four identical perceptions of a working booking form.
-  if (!t.declaredDone && !t.abandoned && t.perceptions.length >= 4) {
+  if (!finished && !t.abandoned && t.perceptions.length >= 4) {
     const tail = t.perceptions.slice(-4).map(fingerprint);
     if (new Set(tail).size === 1) {
       blockers.push({
@@ -372,7 +513,7 @@ export function grade(t: Transcript): Verdict {
     milestones.push("found-key-info");
   }
   if (cta.found && !cta.deadEndOnly) milestones.push("found-cta");
-  if (t.declaredDone) milestones.push("completed-action");
+  if (finished) milestones.push("completed-action");
 
   // --- score ---
 
@@ -415,11 +556,29 @@ export function grade(t: Transcript): Verdict {
     milestones,
     blockers,
     steps: t.stepCount,
-    summary: summarise(letter, t, milestones, blockers, spec.label, inconclusive, Boolean(cutShort)),
+    summary: summarise(
+      letter,
+      t,
+      milestones,
+      blockers,
+      spec.label,
+      inconclusive,
+      Boolean(cutShort),
+      t.declaredDone && !finished,
+    ),
     ...(inconclusive ? { inconclusive: true as const } : {}),
     ...(cutShort ? { cutShort } : {}),
   };
 }
+
+/** What would have counted as finishing, said in one clause a site owner can check. */
+const END_STATE_WANTED: Record<ActionKind, string> = {
+  signup: "no account, and no page saying one had been created",
+  purchase: "no checkout or payment step",
+  integrate: "not both a code example and a stated route to an API key",
+  book: "no booking submitted, and no answer from the site",
+  contact: "no contact form holding a typed message",
+};
 
 function summarise(
   letter: Grade,
@@ -429,8 +588,18 @@ function summarise(
   actionLabel: string,
   inconclusive = false,
   cutShort = false,
+  unsupported = false,
 ): string {
   const task = actionLabel.toLowerCase();
+
+  /**
+   * Said whenever it applies, and never as a finding against the site. The agent
+   * reporting a finish nobody can see is our failure to report honestly, and the
+   * reader is owed the reason those 40 points are missing.
+   */
+  const disputed = unsupported
+    ? ` The agent reported finishing and what it saw does not bear that out: ${END_STATE_WANTED[t.action]}. Graded as unfinished.`
+    : "";
 
   if (inconclusive) {
     return `No verdict: the run never reached the site (${t.abandoned}), so there is nothing to grade. Nothing here is a finding about ${task}.`;
@@ -456,7 +625,7 @@ function summarise(
       : milestones.includes("understood-offering")
         ? "It understood what you sell but never reached the action"
         : "It could not even read what you sell";
-    return `An AI agent failed to ${task}. ${where}. Primary blocker: ${primary.blocker}.`;
+    return `An AI agent failed to ${task}. ${where}. Primary blocker: ${primary.blocker}.${disputed}`;
   }
-  return `An AI agent failed to ${task} within ${t.stepCount} steps, without hitting a specific blocker. Grade ${letter}.`;
+  return `An AI agent failed to ${task} within ${t.stepCount} steps, without hitting a specific blocker. Grade ${letter}.${disputed}`;
 }

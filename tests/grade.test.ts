@@ -55,6 +55,13 @@ describe("grade: the happy path", () => {
     perceptions: [
       page({ hasPrice: true, elements: [el(1, "link", "Sign up free", "/signup")] }),
       page({ url: "https://example.com/signup", hasPrice: true, elements: [el(1, "button", "Create account")] }),
+      // The end state, which is what earns completed-action rather than the model's
+      // word for it. A fresh browser is never offered a way out of a session.
+      page({
+        url: "https://example.com/app",
+        title: "Dashboard",
+        elements: [el(1, "button", "Log out")],
+      }),
     ],
     declaredDone: true,
     stepCount: 4,
@@ -105,7 +112,11 @@ describe("grade: hard blockers cap the result", () => {
     const t = transcript({
       action: "signup",
       perceptions: [
-        page({ hasPrice: true, text: `${PROSE} please complete the captcha`, elements: [el(1, "link", "Sign up", "/signup")] }),
+        page({
+          hasPrice: true,
+          text: `${PROSE} please complete the captcha`,
+          elements: [el(1, "link", "Sign up", "/signup"), el(2, "button", "Log out")],
+        }),
       ],
       declaredDone: true,
     });
@@ -117,8 +128,11 @@ describe("grade: hard blockers cap the result", () => {
 
   it("caps rather than floors, so a bad run is not lifted to 45", () => {
     const t = transcript({
+      action: "book",
       perceptions: [page({ jsGated: true, text: "" }), page({ jsGated: true, text: "" })],
       declaredDone: true,
+      // Submitted and answered with silence, which this task counts as finished.
+      operated: ['type "Name"', 'click "10:30am"', 'click "Send booking"'],
     });
     const v = grade(t);
     assert.equal(v.score, 40, "completion alone, with nothing else earned");
@@ -298,9 +312,13 @@ describe("grade: the soft findings", () => {
   });
 
   it("flags an auth gate only when the run did not finish anyway", () => {
-    const perceptions = [page({ text: `${PROSE} please log in` })];
-    assert.ok(blockers(transcript({ perceptions })).includes("auth-gate"));
-    assert.ok(!blockers(transcript({ perceptions, declaredDone: true })).includes("auth-gate"));
+    const wall = page({ text: `${PROSE} please log in` });
+    assert.ok(blockers(transcript({ perceptions: [wall] })).includes("auth-gate"));
+    const through = transcript({
+      perceptions: [wall, page({ url: "https://example.com/app", elements: [el(1, "button", "Log out")] })],
+      declaredDone: true,
+    });
+    assert.ok(!blockers(through).includes("auth-gate"));
   });
 
   it("flags a form stall from two or more failed interactions", () => {
@@ -481,7 +499,18 @@ describe("grade: a wall that wants a code from an inbox", () => {
   });
 
   it("says nothing when the agent got through it anyway", () => {
-    assert.ok(!blockers(transcript({ ...reached, declaredDone: true, gaveUp: false })).includes("verification-gate"));
+    // Through means a page that only a visitor with an account is shown. The wall
+    // is still in the transcript, and a run that ended on it is charged for it; a
+    // run that came out the other side is not.
+    const through = transcript({
+      action: "signup",
+      perceptions: [
+        page({ text: `${PROSE}\nAn email was sent to alex.morgan@example.com.` }),
+        page({ url: "https://example.com/app", elements: [el(1, "button", "Log out")] }),
+      ],
+      declaredDone: true,
+    });
+    assert.ok(!blockers(through).includes("verification-gate"));
   });
 
   /**
@@ -583,6 +612,181 @@ describe("grade: milestones and letters", () => {
   it("explains how far the agent got when it never reached the action", () => {
     const v = grade(transcript({ perceptions: [page({ jsGated: true, text: "" })] }));
     assert.match(v.summary, /could not even read what you sell/);
+  });
+});
+
+/**
+ * The only milestone the agent awards itself, and now the only one with evidence
+ * behind it. Forty of the hundred points used to rest on the model's word about
+ * its own run, on the same transcript the grader was built not to trust.
+ */
+describe("grade: a claim of having finished", () => {
+  it("credits an integrate run that saw both halves of what it was sent for", () => {
+    const t = transcript({
+      action: "integrate",
+      perceptions: [
+        page({
+          url: "https://docs.stripe.com/keys",
+          title: "API keys",
+          text: `${PROSE}\ncurl https://api.stripe.com/v1/charges\nYour secret key lives in the Dashboard.`,
+        }),
+      ],
+      declaredDone: true,
+    });
+    const v = grade(t);
+    assert.ok(v.milestones.includes("completed-action"));
+    assert.equal(v.score, 100);
+    assert.equal(v.grade, "A");
+  });
+
+  /*
+   * Titled "Get started" rather than "API keys" on purpose. The haystack these
+   * signs are read from includes the page title, so a page called "API keys" is
+   * already telling an agent where the key comes from, and this fixture has to
+   * lack that half for real to be measuring the thing it names.
+   */
+  it("withholds it from one that saw code and never saw where a key comes from", () => {
+    const t = transcript({
+      action: "integrate",
+      perceptions: [
+        page({
+          url: "https://docs.stripe.com/get-started",
+          title: "Get started",
+          text: `${PROSE}\nnpm install stripe\nRead on for the concepts.`,
+        }),
+      ],
+      declaredDone: true,
+    });
+    const v = grade(t);
+    assert.ok(!v.milestones.includes("completed-action"));
+    assert.match(v.summary, /reported finishing/);
+    assert.match(v.summary, /route to an API key/);
+  });
+
+  it("takes the payment step as the end of a purchase, by its fields or by its URL", () => {
+    const fields = transcript({
+      action: "purchase",
+      perceptions: [page({ hasPrice: true, text: `${PROSE} Card number` })],
+      declaredDone: true,
+    });
+    assert.ok(grade(fields).milestones.includes("completed-action"));
+
+    const byUrl = transcript({
+      action: "purchase",
+      perceptions: [page({ url: "https://example.com/checkout", hasPrice: true })],
+      declaredDone: true,
+    });
+    assert.ok(grade(byUrl).milestones.includes("completed-action"), "iframed card fields never reach the tree");
+
+    const shelf = transcript({
+      action: "purchase",
+      perceptions: [page({ url: "https://example.com/product/mug", hasPrice: true })],
+      declaredDone: true,
+    });
+    assert.ok(!grade(shelf).milestones.includes("completed-action"), "a product page is not a checkout");
+  });
+
+  /**
+   * The wall the `signup` task was rewritten to stop calling a success: a page
+   * asking for a code out of an inbox, however cheerfully it words it.
+   */
+  it("refuses a signup that ended holding out for a code, whatever else the page says", () => {
+    const t = transcript({
+      action: "signup",
+      perceptions: [
+        page({ elements: [el(1, "link", "Sign up", "/signup")], hasPrice: true }),
+        page({
+          url: "https://example.com/verify",
+          title: "Check your email",
+          text: `${PROSE} You're all set. Enter the code we sent.`,
+          elements: [el(1, "button", "Activate account")],
+        }),
+      ],
+      declaredDone: true,
+    });
+    const v = grade(t);
+    assert.ok(!v.milestones.includes("completed-action"));
+    assert.equal(v.blockers[0]?.blocker, "verification-gate", "and the wall is charged, not suppressed");
+    assert.equal(v.score, 60);
+  });
+
+  it("takes a booking as submitted when the press landed after real work", () => {
+    const form = () =>
+      page({
+        url: "https://example.com/book",
+        text: `${PROSE} Available Mon to Fri, 9am to 5pm`,
+        elements: [el(1, "button", "Send booking")],
+      });
+    const submitted = transcript({
+      action: "book",
+      perceptions: [form(), form()],
+      declaredDone: true,
+      operated: ['click "Book a table"', 'type "Ada Lovelace"', 'click "Send booking"'],
+    });
+    assert.ok(grade(submitted).milestones.includes("completed-action"), "silence is an answer here");
+
+    const glanced = transcript({
+      action: "book",
+      perceptions: [form()],
+      declaredDone: true,
+      operated: ['click "Book now"'],
+    });
+    assert.ok(!grade(glanced).milestones.includes("completed-action"), "the way to a form is not a booking");
+  });
+
+  it("takes the site's own receipt as the end of a booking however it got there", () => {
+    const t = transcript({
+      action: "book",
+      perceptions: [page({ text: `${PROSE} Thanks. We have received your request and we will be in touch.` })],
+      declaredDone: true,
+    });
+    assert.ok(grade(t).milestones.includes("completed-action"));
+  });
+
+  it("reads a composed message off the control that holds it", () => {
+    const withMessage = (value?: string) =>
+      transcript({
+        action: "contact",
+        perceptions: [
+          page({
+            url: "https://example.com/contact",
+            elements: [
+              { index: 1, role: "textbox", name: "Your message", ...(value ? { value } : {}) },
+              el(2, "button", "Send"),
+            ],
+          }),
+        ],
+        declaredDone: true,
+      });
+    assert.ok(grade(withMessage("I would like a quote for 40 units.")).milestones.includes("completed-action"));
+    assert.ok(!grade(withMessage()).milestones.includes("completed-action"), "an empty box is not a message");
+  });
+
+  /**
+   * What an unsupported claim costs, and what it must not cost. The model
+   * misreporting its own run is our failure, so it produces no finding against the
+   * site: everything the run really did reach is still credited, and the sentence
+   * the owner reads says which end state was missing.
+   */
+  it("keeps what was reached, files no blocker, and says which end state was missing", () => {
+    const t = transcript({
+      action: "signup",
+      perceptions: [page({ hasPrice: true, elements: [el(1, "link", "Sign up free", "/signup")] })],
+      declaredDone: true,
+      stepCount: 6,
+    });
+    const v = grade(t);
+    assert.deepEqual(v.milestones.sort(), ["found-cta", "found-key-info", "understood-offering"]);
+    assert.deepEqual(v.blockers, [], "a model's bad report is not the site's finding");
+    assert.equal(v.score, 60);
+    assert.equal(v.grade, "C");
+    assert.match(v.summary, /no account, and no page saying one had been created/);
+    assert.match(v.summary, /Graded as unfinished/);
+  });
+
+  it("says nothing of the kind when no claim was made", () => {
+    const v = grade(transcript({ perceptions: [page({ hasPrice: true })] }));
+    assert.ok(!v.summary.includes("reported finishing"));
   });
 });
 

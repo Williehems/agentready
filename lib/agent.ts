@@ -909,6 +909,13 @@ export async function runAudit(opts: RunOptions): Promise<void> {
   let pending: { key: string; before: Perception; line: number; charge?: string } | undefined;
 
   /**
+   * Moves that landed, in the order they landed, as the grader's record of what
+   * this run actually did. See Transcript.operated: a booking answered with
+   * silence is a finished booking, and this is the only evidence of the press.
+   */
+  const operated: string[] = [];
+
+  /**
    * Withdraw a failure from a click that turned out to have worked.
    *
    * Playwright's ten-second click timeout is not the last word. A link that opens
@@ -921,6 +928,8 @@ export async function runAudit(opts: RunOptions): Promise<void> {
     if (!pending?.charge) return;
     withdrawFailure(failures, pending.charge);
     memory.history[pending.line] = `- ${pending.key} (ok, ${proof})`;
+    // Evidence of the press, on the same evidence that withdrew the charge.
+    if (!operated.includes(pending.key)) operated.push(pending.key);
     pending = { ...pending, charge: undefined };
   };
   let declaredDone = false;
@@ -1245,6 +1254,7 @@ export async function runAudit(opts: RunOptions): Promise<void> {
       if (error && !wedged) failures.push(error);
       stalls = wedged ? stalls + 1 : 0;
       const move = `${d.action}${el ? ` "${el.name}"` : ""}`;
+      if (!error) operated.push(move);
       // Written down against the page it was taken from, so a second visit knows
       // which turnings have already been taken. Recorded whatever it did: a move
       // that failed from here is as much a reason not to take it again as one that
@@ -1412,6 +1422,7 @@ export async function runAudit(opts: RunOptions): Promise<void> {
       perceptions,
       declaredDone,
       gaveUp,
+      operated,
       failures,
       stepCount,
       stealth: launched?.stealth ?? false,
