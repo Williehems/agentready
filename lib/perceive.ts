@@ -361,9 +361,21 @@ const PRICE_RE =
  * punctuation that makes it a call. What is deliberately absent is anything that
  * merely mentions code: "code example", "quickstart", "see the reference". A page
  * that talks about a code sample has not shown one.
+ *
+ * The last alternative is a command line, and it is here because a live run
+ * caught the grader without it. docs.stripe.com/ renders
+ * `$ stripe coupons create --amount-off 2000 --currency "usd"` with the JSON
+ * coupon it returns underneath, the model said done and named that sample, and
+ * the grader answered that it had seen no code example. It had. A CLI call is a
+ * copyable call, and refusing it cost a correct claim its 40 points.
+ *
+ * Written as a long option rather than as a `$` prompt, because a `$` is also a
+ * currency and every pricing page has one. A long option cannot be prose: the
+ * space in front rules out "word--word" used as a dash, and the letter straight
+ * after the dashes rules out " -- " used as one.
  */
 const CODE_RE =
-  /curl\s+(?:-|https?:\/\/)|authorization:\s*bearer|\bimport\s*\{|\brequire\(\s*['"]|\bfetch\(\s*['"`]|(?:^|\s)-H\s+['"]/i;
+  /curl\s+(?:-|https?:\/\/)|authorization:\s*bearer|\bimport\s*\{|\brequire\(\s*['"]|\bfetch\(\s*['"`]|(?:^|\s)-H\s+['"]|\s--[a-z][a-z0-9-]{2,}/i;
 
 /**
  * Does this text carry a price a machine could read?
@@ -376,6 +388,24 @@ export function looksPriced(text: string): boolean {
 }
 
 /**
+ * Getting the SDK onto the machine, taken out before the question is asked.
+ *
+ * `npm install --global @stripe/cli` is a command line with a long option in it,
+ * so the alternative above reads it as a copyable call, and it is not one. The
+ * grader keeps install signs and call signs in separate lists for exactly this
+ * reason, after the model refused to call a `pip install` page finished and was
+ * right about it, and this is the same distinction one layer down.
+ *
+ * The command and its own arguments, not the line: on docs.stripe.com/agents an
+ * install and a real `stripe sandbox create --help` sit in one sentence together,
+ * and dropping the line would lose the call along with the install. So the tail
+ * runs only while the tokens still look like flags or package names, which stops
+ * it at the first word of ordinary prose.
+ */
+const INSTALL_RE =
+  /\b(?:npm|pnpm|yarn|pip3?|go|gem|composer|dotnet|brew|apt(?:-get)?|cargo)\s+(?:install|add|get|require|i)\b(?:\s+(?:-{1,2}[\w-]+|[@\w][^\s]*))*/gi;
+
+/**
  * Does this text carry a call a developer could copy?
  *
  * The same shape as looksPriced and for the same reason, on the axis that decides
@@ -383,7 +413,7 @@ export function looksPriced(text: string): boolean {
  * the copy the model is sent: see Perception.hasCode.
  */
 export function looksCoded(text: string): boolean {
-  return CODE_RE.test(text);
+  return CODE_RE.test(text.replace(INSTALL_RE, " "));
 }
 
 /**

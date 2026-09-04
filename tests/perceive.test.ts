@@ -1138,3 +1138,58 @@ describe("looksCoded: a call the reader could copy", () => {
     }
   });
 });
+
+/**
+ * The alternative a live run added, and the one it must not have added with it.
+ * docs.stripe.com/ shows `$ stripe coupons create --amount-off 2000` with the JSON
+ * it returns underneath; the model said done and named that sample, and the grader
+ * answered that it had seen no code example. Meanwhile the same site's setup page
+ * shows `npm install --global @stripe/cli` and nothing else, which is a command
+ * line and still not a call.
+ */
+describe("looksCoded: a command line", () => {
+  it("reads a CLI call, flags and all", () => {
+    for (const text of [
+      '$ stripe coupons create --amount-off 2000 --currency "usd"',
+      "Run `stripe sandbox create --help` to get working keys.",
+      'curl https://api.stripe.com/v1/checkout/sessions --mode payment',
+    ]) {
+      assert.equal(looksCoded(text), true, text);
+    }
+  });
+
+  it("does not read getting the SDK onto the machine as calling it", () => {
+    for (const text of [
+      "npm install --global @stripe/cli",
+      "pip install --upgrade stripe",
+      "yarn add --dev resend",
+      "brew install --cask docker",
+      "cargo add --features derive serde",
+    ]) {
+      assert.equal(looksCoded(text), false, text);
+    }
+  });
+
+  it("keeps a real call that shares a sentence with an install", () => {
+    // Verbatim shape from docs.stripe.com/agents, where both sit in one line.
+    // Dropping the whole line would lose the call along with the install.
+    assert.equal(
+      looksCoded(
+        "1. Install the Stripe CLI, if not installed, with `npm install -g @stripe/cli` 2. Run `stripe sandbox create --help` to get working API keys.",
+      ),
+      true,
+    );
+  });
+
+  it("does not read a dash in prose as a flag", () => {
+    for (const text of [
+      "The site--and its documentation--were slow that afternoon.",
+      "Read the guide -- then come back.",
+      "State-of-the-art infrastructure, fully managed.",
+      "$ 20 off your first month",
+      "Save 50% -- limited time",
+    ]) {
+      assert.equal(looksCoded(text), false, text);
+    }
+  });
+});
