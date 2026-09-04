@@ -193,7 +193,7 @@ const TEXT_LATER = 1100;
  * blocker charged to a site whose signup works fine. The address our own last run
  * consumed is not a finding about theirs.
  */
-function systemPrompt(runId: string): string {
+export function systemPrompt(runId: string): string {
   const today = new Date();
   const stamp = today.toLocaleDateString("en-GB", {
     weekday: "long",

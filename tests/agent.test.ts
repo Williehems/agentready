@@ -8,6 +8,7 @@ import {
   priceOnFrontPage,
   recall,
   sameSite,
+  systemPrompt,
   taskBlock,
   textBudget,
   usable,
@@ -965,6 +966,57 @@ describe("taskBlock: the task the model is handed on every step", () => {
       assert.ok(block.includes(spec.goal), `${spec.id} lost its goal`);
       assert.ok(block.includes(spec.done), `${spec.id} lost its completion test`);
     }
+  });
+});
+
+/**
+ * Every rule below was written after a run lost points to its absence, and none of
+ * them were pinned by anything. A prompt is code: a line removed while tidying is a
+ * regression that shows up as one bad grade three runs later, on a different site,
+ * looking like a finding about that site.
+ */
+describe("systemPrompt: the standing rules a step is decided under", () => {
+  const said = () => systemPrompt("mtmrchh4-lzfr4t");
+
+  it("names today twice, in words and in numbers", () => {
+    const today = new Date();
+    const iso = [
+      today.getFullYear(),
+      String(today.getMonth() + 1).padStart(2, "0"),
+      String(today.getDate()).padStart(2, "0"),
+    ].join("-");
+    assert.ok(said().includes(iso), "a form wants a date and the model has to know the day");
+    assert.match(said(), /Today is \w+day, \d+ \w+ \d{4}/);
+  });
+
+  /**
+   * plausible.io, second visit: four clicks on "Start my free trial" against
+   * "Email is already taken", give_up at step 9, and a loop blocker charged to a
+   * signup that works. The address our own last run consumed is not a finding
+   * about theirs.
+   */
+  it("gives this run an address of its own", () => {
+    assert.ok(said().includes(personaEmail("mtmrchh4-lzfr4t")));
+    assert.ok(!said().includes(personaEmail("some-other-run")));
+  });
+
+  /** The rule the integrate ceiling rests on: there is nothing to press. */
+  it("says a task whose object is to find something ends when it has been seen", () => {
+    assert.match(said(), /done is\s+the moment you have seen it/);
+    assert.match(said(), /one more click after that is a step wasted/);
+  });
+
+  it("does not let a wall be reported as a success", () => {
+    assert.match(said(), /A wall is give_up, not done/);
+    assert.match(said(), /Say which wall it was/);
+  });
+
+  it("keeps a challenge that clears itself from being read as a refusal", () => {
+    assert.match(said(), /Most challenges need no\s+interaction at all/);
+  });
+
+  it("refuses card details outright, and says what to do instead", () => {
+    assert.match(said(), /NEVER enter real payment card details/);
   });
 });
 
