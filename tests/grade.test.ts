@@ -443,18 +443,66 @@ describe("grade: a wall that wants a code from an inbox", () => {
     assert.equal(grade({ ...priced, gaveUp: false }).grade, "C");
   });
 
-  it("reads the last page only, so marketing copy earlier in the run is not a wall", () => {
-    // "Check your inbox" on a newsletter panel the agent walked straight past is
+  it("reads promotional copy on an earlier page as the newsletter pitch it is", () => {
+    // The guard the last-page rule exists for. "Check your inbox" sells a mailing
+    // list on a thousand front pages, and a page the agent walked straight past is
     // not the reason a later step failed.
+    const newsletter = page({
+      url: "https://example.com/",
+      text: `${PROSE}\nSubscribe for product news. Check your inbox to confirm.`,
+    });
     const passedThrough = transcript({
-      perceptions: [{ ...codeWall }, page({ url: "https://example.com/pricing", hasPrice: true })],
+      perceptions: [newsletter, page({ url: "https://example.com/pricing", hasPrice: true })],
       stepCount: 3,
     });
     assert.ok(!blockers(passedThrough).includes("verification-gate"));
   });
 
+  it("still names a wall the run walked past, when the page said it had sent one", () => {
+    // Measured on console.groq.com/keys: "Check your email. An email was sent to
+    // alex.morgan.<run>@example.com. Try again" was on screen at step 4 and again
+    // at step 8, the run then went back to the docs, and the verdict read "without
+    // hitting a specific blocker". A site reporting what it has just sent is not
+    // selling a newsletter, so this half is read off every page.
+    const sent = page({
+      url: "https://console.groq.com/keys",
+      title: "API Keys - GroqCloud",
+      text: `${PROSE}\nCheck your email\nAn email was sent to alex.morgan.mtm87ve9-pw9ujo@example.com.`,
+      elements: [el(1, "button", "Try again")],
+    });
+    const wandered = transcript({
+      action: "integrate",
+      perceptions: [sent, page({ url: "https://console.groq.com/docs/overview" })],
+      stepCount: 10,
+    });
+    const v = grade(wandered);
+    assert.equal(v.blockers[0]?.blocker, "verification-gate");
+    assert.match(v.blockers[0]!.detail, /an email was sent to/);
+  });
+
   it("says nothing when the agent got through it anyway", () => {
     assert.ok(!blockers(transcript({ ...reached, declaredDone: true, gaveUp: false })).includes("verification-gate"));
+  });
+
+  /**
+   * The wall in front of the wall, in the words Groq's console uses: "Create an
+   * account or login to access this page". The list it was tested against wanted
+   * "log in to continue", so an API key an agent cannot obtain without an account
+   * was graded as no obstacle at all.
+   */
+  it("names a page that gates itself, however it phrases the demand", () => {
+    for (const copy of [
+      "Create an account or login to access this page",
+      "Please log in to access this page",
+      "Sign in to access your dashboard",
+    ]) {
+      const gated = transcript({
+        action: "integrate",
+        perceptions: [page({ url: "https://console.groq.com/keys", text: `${PROSE}\n${copy}` })],
+        stepCount: 4,
+      });
+      assert.ok(blockers(gated).includes("auth-gate"), copy);
+    }
   });
 
   it("reads the controls too, for a page whose prose did not reach us", () => {

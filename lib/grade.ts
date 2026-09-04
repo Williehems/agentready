@@ -88,7 +88,46 @@ const BOT_WALL_SIGNS = [
 
 const CAPTCHA_SIGNS = ["captcha", "recaptcha", "hcaptcha", "turnstile", "i'm not a robot"];
 
-const AUTH_SIGNS = ["sign in to continue", "log in to continue", "please log in", "login required", "members only"];
+/**
+ * The same wall in the words no site uses for anything else: a second-person
+ * statement that a message has already been sent to this visitor.
+ *
+ * Read off every page the run reached rather than only the one it ended on, which
+ * is what separates these from the list above. Measured on console.groq.com/keys:
+ * "Check your email. An email was sent to alex.morgan.<run>@example.com. Try
+ * again" was on screen twice, at step 4 and again at step 8, and because the run
+ * wandered back to the docs afterwards the verdict read "without hitting a
+ * specific blocker". An agent cannot open that email, so it was the whole story.
+ *
+ * These stay narrow by being transactional rather than promotional. "Check your
+ * inbox" sells a newsletter on a thousand front pages; "an email was sent to" is
+ * a site reporting what it just did.
+ */
+const VERIFY_SENT_SIGNS = [
+  "an email was sent to",
+  "we sent an email to",
+  "we sent you an email",
+  "we've sent an email",
+  "we have sent an email",
+  "we emailed you a link",
+  "we sent a sign-in link",
+  "we sent a login link",
+];
+
+const AUTH_SIGNS = [
+  "sign in to continue",
+  "log in to continue",
+  "please log in",
+  "login required",
+  "members only",
+  // Measured on console.groq.com/keys, the page an agent must reach to obtain an
+  // API key: "Create an account or login to access this page". A wall that names
+  // itself that plainly was passing through the grader unnoticed.
+  "to access this page",
+  "login to access",
+  "log in to access",
+  "sign in to access",
+];
 
 /**
  * A wall that asks for something only a human with an inbox or a phone can hand
@@ -133,7 +172,7 @@ const VERIFY_SIGNS = [
  * through as elements. A wall is identified as reliably by its controls as by its
  * copy, and reading both costs nothing.
  */
-function lastPage(p: Perception): string {
+function pageText(p: Perception): string {
   return [p.title, p.text, ...p.elements.map((e) => e.name)].join("\n").toLowerCase();
 }
 
@@ -238,11 +277,16 @@ export function grade(t: Transcript): Verdict {
   // cap; without completed-action the score already tops out at 60. What it
   // changes is the sentence the owner reads.
   const lastPerception = t.perceptions[t.perceptions.length - 1];
-  const verifySign = lastPerception ? VERIFY_SIGNS.find((s) => lastPage(lastPerception).includes(s)) : undefined;
-  if (verifySign && !t.declaredDone) {
+  const verifySign = lastPerception ? VERIFY_SIGNS.find((s) => pageText(lastPerception).includes(s)) : undefined;
+  // The transactional half, which does not need the run to have ended there. See
+  // VERIFY_SENT_SIGNS for the run that went past this wall twice and was graded as
+  // having met nothing.
+  const pages = t.perceptions.map(pageText);
+  const sentSign = VERIFY_SENT_SIGNS.find((s) => pages.some((page) => page.includes(s)));
+  if ((verifySign || sentSign) && !t.declaredDone) {
     blockers.push({
       blocker: "verification-gate",
-      detail: `The flow stopped to ask for a code from an inbox or a phone ("${verifySign}"). An agent has neither, so the action ends here however good the rest of the site is.`,
+      detail: `The flow required something only an inbox or a phone can supply ("${verifySign ?? sentSign}"): a code to read back, or a link to open. An agent has neither, so the action ends here however good the rest of the site is.`,
     });
   }
 
