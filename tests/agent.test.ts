@@ -3,12 +3,15 @@ import { describe, it, mock } from "node:test";
 import {
   act,
   frontPage,
+  type Memory,
   personaEmail,
   priceOnFrontPage,
+  recall,
   usable,
   withdrawFailure,
   withOurEmail,
 } from "../lib/agent";
+import { fingerprint } from "../lib/perceive";
 import type { Perception } from "../lib/types";
 
 /**
@@ -422,6 +425,82 @@ describe("act: a custom widget refusing the mechanism, not the visitor", () => {
     } as unknown as Parameters<typeof act>[0];
     const out = await act(page, state, { action: "type", target: 1, value: "x", reasoning: "" });
     assert.equal(out, 'combobox "Select country" would not accept a type: locator.fill: Error: Element is not visible');
+  });
+});
+
+/**
+ * The lap.
+ *
+ * Measured on docs.groq.com, an integrate run of ten steps: click "API Keys",
+ * type the address, click "Continue with email", click "Docs", and then those same
+ * four again. Six of ten steps spent going round twice. Every one of them changed
+ * the page, so nothing was inert; no two perceptions in a row matched, so the
+ * grader saw no loop. Only the page state repeating can see it.
+ */
+describe("recall: what the model is told it has already done from here", () => {
+  const docs: Perception = {
+    url: "https://console.groq.com/docs/overview",
+    title: "Overview - GroqDocs",
+    text: "Docs API Reference GETTING STARTED Overview Quickstart Models",
+    jsGated: false,
+    hasPrice: false,
+    elements: [
+      { index: 1, role: "link", name: "API Keys", ref: "e3", href: "/keys" },
+      { index: 2, role: "link", name: "API Reference", ref: "e4", href: "/docs/api" },
+    ],
+  };
+  const login: Perception = {
+    ...docs,
+    url: "https://console.groq.com/keys",
+    title: "API Keys - GroqCloud",
+    text: "Create an account or login to access this page",
+    elements: [{ index: 1, role: "textbox", name: "Email", ref: "e9" }],
+  };
+  const fresh = (): Memory => ({ history: [], inert: new Set(), seen: new Map() });
+
+  it("says nothing at all on a page the run has not stood on", () => {
+    const m = fresh();
+    m.seen.set("some other page", ['click "API Keys"']);
+    assert.equal(recall(m, docs), "");
+  });
+
+  it("names the turning already taken when the run comes back round", () => {
+    const m = fresh();
+    m.seen.set(fingerprint(docs), ['click "API Keys"']);
+    const said = recall(m, docs);
+    assert.match(said, /YOU HAVE BEEN ON THIS EXACT PAGE BEFORE/);
+    assert.match(said, /- click "API Keys"/);
+    assert.match(said, /Choose something else\./);
+  });
+
+  it("keeps each page's turnings to itself", () => {
+    const m = fresh();
+    m.seen.set(fingerprint(docs), ['click "API Keys"']);
+    m.seen.set(fingerprint(login), ['type "Email"']);
+    assert.ok(!recall(m, login).includes('click "API Keys"'));
+    assert.match(recall(m, login), /- type "Email"/);
+  });
+
+  it("carries the other two blocks alongside it, since a lap is not the only thing worth knowing", () => {
+    const m: Memory = {
+      history: ['- click "API Keys" (ok)', '- click "Docs" (ok)'],
+      inert: new Set(['click "Search"']),
+      seen: new Map([[fingerprint(docs), ['click "API Keys"']]]),
+    };
+    const said = recall(m, docs);
+    assert.match(said, /WHAT YOU HAVE ALREADY TRIED:/);
+    assert.match(said, /THESE LEFT THE PAGE EXACTLY AS IT WAS/);
+    // In that order, so the most specific thing is the last thing read.
+    assert.ok(said.indexOf("ALREADY TRIED") < said.indexOf("EXACTLY AS IT WAS"));
+    assert.ok(said.indexOf("EXACTLY AS IT WAS") < said.indexOf("EXACT PAGE BEFORE"));
+  });
+
+  it("shows only the last five moves but every dead end, which is the point of keeping them apart", () => {
+    const m = fresh();
+    m.history = Array.from({ length: 8 }, (_, i) => `- click "Step ${i + 1}" (ok)`);
+    const said = recall(m, docs);
+    assert.ok(!said.includes('"Step 3"'));
+    assert.match(said, /"Step 4"/);
   });
 });
 

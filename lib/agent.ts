@@ -297,8 +297,8 @@ export function withdrawFailure(failures: string[], charge: string): boolean {
 type Meter = Pick<ChatOptions, "onUsage" | "onWait">;
 
 /**
- * What the run remembers between decisions: what it has done, and what turned
- * out to do nothing.
+ * What the run remembers between decisions: what it has done, what turned out to
+ * do nothing, and what it did the last time it stood where it is standing now.
  *
  * The second half is the expensive one. A click can land perfectly and still
  * leave the page exactly as it was, and "click X (ok)" reads to the model as
@@ -307,27 +307,35 @@ type Meter = Pick<ChatOptions, "onUsage" | "onWait">;
  * the answer two clicks away. So a step that moved nothing is written down as
  * having moved nothing, and named again as something not to choose.
  *
+ * `seen` is the same problem at a wider radius, and neither of the other two can
+ * see it. Measured on docs.groq.com: click "API Keys", type the address, click
+ * "Continue with email", click "Docs", and then those same four again, six of ten
+ * steps spent going round twice. Every one of those steps changed the page, so
+ * nothing was inert, and no two perceptions in a row matched, so the grader saw no
+ * loop. What repeated was the lap. Keyed by page state rather than by URL, because
+ * the login form before and after it was submitted is not the same page.
+ *
  * This changes what the agent spends its steps on and nothing about what the
  * site is charged with: the loop blocker still comes from the grader reading
  * four identical perceptions, not from anything recorded here.
  */
-interface Memory {
+export interface Memory {
   history: string[];
   /** Actions, phrased as the prompt names them, that left the page unchanged. */
   inert: Set<string>;
+  /** Page state, to the moves already made from it. */
+  seen: Map<string, string[]>;
 }
 
-async function decide(
-  p: Perception,
-  goal: string,
-  stepsLeft: number,
-  memory: Memory,
-  timeoutMs: number,
-  isFirst: boolean,
-  runId: string,
-  meter: Meter = {},
-  signal?: AbortSignal,
-): Promise<Outcome> {
+/**
+ * Everything the run remembers, as the model reads it.
+ *
+ * Pulled out of the prompt for one reason: this is the half of the loop fix that
+ * can be checked without a browser, and what it says is the whole mechanism. If
+ * these lines stop appearing the agent goes back to spending six steps of ten
+ * going round twice, and nothing else in the run would notice.
+ */
+export function recall(memory: Memory, p: Perception): string {
   const recent = memory.history.length
     ? `\n\nWHAT YOU HAVE ALREADY TRIED:\n${memory.history.slice(-5).join("\n")}`
     : "";
@@ -342,13 +350,37 @@ async function decide(
         .map((k) => `- ${k}`)
         .join("\n")}`
     : "";
+  // Says what was tried from here and stops there. Coming back to a page is often
+  // the right move; it is taking the same turning off it that costs the run the
+  // budget, and the model is better placed than this code to know which of the
+  // remaining ones is worth a step.
+  const before = memory.seen.get(fingerprint(p));
+  const again = before?.length
+    ? `\n\nYOU HAVE BEEN ON THIS EXACT PAGE BEFORE. FROM HERE YOU ALREADY TRIED:\n${before
+        .map((m) => `- ${m}`)
+        .join("\n")}\nRepeating any of those brings you back here. Choose something else.`
+    : "";
+  return `${recent}${inert}${again}`;
+}
+
+async function decide(
+  p: Perception,
+  goal: string,
+  stepsLeft: number,
+  memory: Memory,
+  timeoutMs: number,
+  isFirst: boolean,
+  runId: string,
+  meter: Meter = {},
+  signal?: AbortSignal,
+): Promise<Outcome> {
   const state = renderState(p, stepsLeft, isFirst ? TEXT_FIRST : TEXT_LATER);
 
   try {
     const raw = await groqJson<unknown>(
       [
         { role: "system", content: systemPrompt(runId) },
-        { role: "user", content: `TASK: ${goal}\n\n${state}${recent}${inert}` },
+        { role: "user", content: `TASK: ${goal}\n\n${state}${recall(memory, p)}` },
       ],
       { maxTokens: 600, temperature: 0.1, timeoutMs, ...meter, signal },
     );
@@ -759,7 +791,7 @@ export async function runAudit(opts: RunOptions): Promise<void> {
 
   const perceptions: Perception[] = [];
   const failures: string[] = [];
-  const memory: Memory = { history: [], inert: new Set() };
+  const memory: Memory = { history: [], inert: new Set(), seen: new Map() };
   /**
    * The last click, and the page as it stood the moment before it. Read once, on
    * the next perception, which is the earliest anything can know whether it did
@@ -979,11 +1011,13 @@ export async function runAudit(opts: RunOptions): Promise<void> {
 
       const p = await perceive(page, clock.cap(PERCEIVE_MS));
       perceptions.push(p);
+      /** This page, as the memory of what was tried from it is keyed. */
+      const here = fingerprint(p);
 
       // Did the last click do anything? This is the only place that can answer,
       // and the answer goes back into the prompt rather than into the verdict.
       if (pending) {
-        if (fingerprint(p) === pending.before) {
+        if (here === pending.before) {
           // Nothing moved. A click that also reported a failure is left charged:
           // it did nothing and said so, which is one finding, not two, and the
           // FAILED line already tells the model not to choose it again.
@@ -1097,6 +1131,12 @@ export async function runAudit(opts: RunOptions): Promise<void> {
       if (error && !wedged) failures.push(error);
       stalls = wedged ? stalls + 1 : 0;
       const move = `${d.action}${el ? ` "${el.name}"` : ""}`;
+      // Written down against the page it was taken from, so a second visit knows
+      // which turnings have already been taken. Recorded whatever it did: a move
+      // that failed from here is as much a reason not to take it again as one that
+      // worked, and one that worked is what makes a lap a lap.
+      const fromHere = memory.seen.get(here) ?? [];
+      if (!fromHere.includes(move)) memory.seen.set(here, [...fromHere, move]);
       memory.history.push(
         `- ${move}${error ? ` FAILED: ${error}` : instead ? ` (${instead})` : " (ok)"}`,
       );
@@ -1108,7 +1148,7 @@ export async function runAudit(opts: RunOptions): Promise<void> {
       if (d.action === "click" || d.action === "back" || instead) {
         pending = {
           key: move,
-          before: fingerprint(p),
+          before: here,
           line: memory.history.length - 1,
           charge: error && !wedged ? error : undefined,
         };
