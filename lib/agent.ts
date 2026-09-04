@@ -50,7 +50,7 @@ const POPUP_SETTLE_MS = 250;
 const POPUP_SETTLE_TRIES = 6;
 
 const DecisionSchema = z.object({
-  action: z.enum(["click", "type", "select", "scroll", "back", "done", "give_up"]),
+  action: z.enum(["click", "type", "select", "scroll", "back", "escape", "done", "give_up"]),
   target: z.union([z.number(), z.string()]).optional(),
   value: z.string().optional(),
   reasoning: z.string().default(""),
@@ -70,6 +70,10 @@ const VERBS: Record<string, Decision["action"]> = {
   choose: "select", pick: "select", select_option: "select", dropdown: "select",
   scroll_down: "scroll", scrolldown: "scroll",
   go_back: "back", goback: "back", navigate_back: "back",
+  // Deliberately not "close" or "cancel": with a target those read as a click on a
+  // named control, and this list is only for verbs with one reading.
+  esc: "escape", press_escape: "escape", escape_key: "escape", close_modal: "escape",
+  dismiss: "escape", dismiss_modal: "escape", close_dialog: "escape", close_popup: "escape",
   finish: "done", finished: "done", complete: "done", completed: "done",
   giveup: "give_up", abort: "give_up", quit: "give_up",
 };
@@ -207,7 +211,7 @@ You will be given the page state as a numbered list of interactive elements plus
 visible text. Choose exactly ONE next action.
 
 Respond with JSON only, in this shape:
-{"action":"click"|"type"|"select"|"scroll"|"back"|"done"|"give_up","target":<element number>,"value":"<text>","reasoning":"<one short first-person sentence>"}
+{"action":"click"|"type"|"select"|"scroll"|"back"|"escape"|"done"|"give_up","target":<element number>,"value":"<text>","reasoning":"<one short first-person sentence>"}
 
 Rules:
 - Address elements only by their number from the list. Never invent a number.
@@ -217,6 +221,13 @@ Rules:
   nothing: "select" is the only way to set one.
 - An element listed with = "something" already holds that value. It is filled in.
   Move on to the next empty field or to the submit control; do not fill it again.
+- "escape" needs no target. It presses the Escape key, which is how a visitor closes
+  a search box, a cookie notice, a chat widget or a dialog that opened over the page.
+  Use it when a click failed because something is painted over the element, or when
+  the list you are given is plainly the contents of an overlay rather than the page
+  you wanted. It is the only way out of an overlay with no close button of its own.
+  Once is enough: if the page does not change, the overlay does not answer to Escape
+  and pressing it again will not help.
 - An element marked (disabled) is on the page but cannot be clicked or filled, so do
   not try. It is a symptom: something above it is unsatisfied, usually an empty
   required field, an unticked box, or a challenge still resolving. Deal with that
@@ -481,6 +492,7 @@ interface ActPage extends AgentPage {
   waitForLoadState(state: "domcontentloaded" | "load", opts?: { timeout?: number }): Promise<void>;
   waitForTimeout(ms: number): Promise<void>;
   mouse: { wheel(dx: number, dy: number): Promise<void> };
+  keyboard: { press(key: string): Promise<void> };
   screenshot(opts: { type: "jpeg"; quality: number }): Promise<Buffer>;
   setViewportSize(size: { width: number; height: number }): Promise<void>;
   goto(url: string, opts?: { timeout?: number; waitUntil?: "domcontentloaded" }): Promise<unknown>;
@@ -627,6 +639,26 @@ export async function act(
   if (d.action === "back") {
     await page.goBack({ timeout: 8000 }).catch(() => {});
     await settle();
+    return undefined;
+  }
+  /**
+   * The way out of an overlay that has no way out in the tree.
+   *
+   * Measured on resend.com/docs/api-reference/api-keys/create-api-key, where our
+   * own agent opened the Mintlify search palette at step 1 and could not get back
+   * to the page: three clicks in a row were intercepted by
+   * `<div> "Ask AssistantUse the up and down arrow k"`, ten seconds each, thirty
+   * seconds of a four-minute budget. Narrowing the element list to the palette does
+   * not help when the palette lists no close button, and `back` cannot help either,
+   * because nothing navigated.
+   *
+   * No target, no failure to report: pressing a key always lands. Whether it did
+   * anything is the next perception's business, and an Escape that changes nothing
+   * is recorded as a move that changed nothing like any other.
+   */
+  if (d.action === "escape") {
+    await page.keyboard.press("Escape");
+    await page.waitForTimeout(600);
     return undefined;
   }
 
@@ -1231,7 +1263,7 @@ export async function runAudit(opts: RunOptions): Promise<void> {
       // never the site's to answer for, so a wedged step carries no charge to
       // withdraw. A substitution is watched for the same reason a click is: it was
       // one, and a widget that opened nothing is worth knowing about.
-      if (d.action === "click" || d.action === "back" || instead) {
+      if (d.action === "click" || d.action === "back" || d.action === "escape" || instead) {
         pending = {
           key: move,
           before: p,

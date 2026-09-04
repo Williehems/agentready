@@ -22,6 +22,7 @@ const VERB: Record<StepAction, string> = {
   select: "chose",
   scroll: "scrolled",
   back: "went back",
+  escape: "pressed Escape",
   done: "declared done",
   give_up: "gave up",
 };

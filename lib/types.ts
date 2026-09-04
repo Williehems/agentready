@@ -8,7 +8,7 @@
 export type ActionKind = "signup" | "purchase" | "integrate" | "book" | "contact";
 
 /** What the agent decided to do on a given turn. */
-export type StepAction = "click" | "type" | "select" | "scroll" | "back" | "done" | "give_up";
+export type StepAction = "click" | "type" | "select" | "scroll" | "back" | "escape" | "done" | "give_up";
 
 /** Why a site failed a machine visitor. Attached to the verdict, not guessed by an LLM. */
 export type Blocker =

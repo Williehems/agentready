@@ -90,6 +90,9 @@ describe("usable: reading the model's answer", () => {
       ["enter", "type"],
       ["choose", "select"],
       ["go back", "back"],
+      ["esc", "escape"],
+      ["dismiss", "escape"],
+      ["close_modal", "escape"],
       ["Scroll-Down", "scroll"],
       ["finished", "done"],
       ["giveup", "give_up"],
@@ -109,6 +112,17 @@ describe("usable: reading the model's answer", () => {
 
   it("accepts an element number sent as a string, which is how a model often writes it", () => {
     assert.equal(usable({ action: "click", target: "4" })?.target, "4");
+  });
+
+  /**
+   * The two neighbours of "escape" that were left out of that map on purpose.
+   * With a target, "close" and "cancel" read as a click on a named control, and
+   * an alias that can mean two things picks one of them wrong. Refusing costs a
+   * retry; guessing costs whatever the wrong reading did to the page.
+   */
+  it("refuses \"close\" and \"cancel\", which do not mean one thing", () => {
+    assert.equal(usable({ action: "close", target: 3 }), undefined);
+    assert.equal(usable({ action: "cancel", target: 3, reasoning: "Shut the dialog" }), undefined);
   });
 
   it("refuses a verb it cannot read, rather than picking one", () => {
@@ -664,6 +678,79 @@ describe("act: an operation the browser never finishes", () => {
       reasoning: "",
     });
     assert.match(failure(why), /did not accept a type within 10s/);
+  });
+});
+
+/**
+ * The one move that aims at nothing.
+ *
+ * Measured on resend.com/docs/api-reference/api-keys/create-api-key: the Mintlify
+ * search palette opened at step 1 and the next three clicks were all intercepted
+ * by `<div> "Ask AssistantUse the up and down arrow k"`, ten seconds each. The
+ * palette listed no close button, so there was nothing in the element list to aim
+ * at, and `back` was no help because nothing had navigated.
+ */
+describe("act: the way out of an overlay", () => {
+  const state: Perception = {
+    url: "https://resend.com/docs/api-reference/api-keys/create-api-key",
+    title: "Create API key",
+    text: "Ask AssistantUse the up and down arrow keys",
+    jsGated: false,
+    hasPrice: false,
+    elements: [{ index: 1, role: "textbox", name: "Ask Assistant", ref: "e12" }],
+  };
+
+  /** A page that records the key it was given and every wait it was asked for. */
+  const fake = () => {
+    const asked: string[] = [];
+    const locator: FakeLocator = {
+      first: () => locator,
+      click: async () => void asked.push("click"),
+      fill: async (value: string) => void asked.push(`fill ${value}`),
+      selectOption: async () => (asked.push("select"), []),
+    };
+    const page = {
+      locator: (selector: string) => (asked.push(`locator ${selector}`), locator),
+      getByRole: (role: string) => (asked.push(`getByRole ${role}`), locator),
+      waitForLoadState: async () => {},
+      waitForTimeout: async () => void asked.push("wait"),
+      mouse: { wheel: async () => {} },
+      keyboard: { press: async (key: string) => void asked.push(`key ${key}`) },
+    };
+    return { asked, page: page as unknown as Parameters<typeof act>[0] };
+  };
+
+  it("presses Escape and reports no failure, because pressing a key always lands", async () => {
+    const f = fake();
+    const why = await act(f.page, state, {
+      action: "escape",
+      reasoning: "The search palette is over the page",
+    });
+    assert.equal(why, undefined);
+    assert.deepEqual(f.asked, ["key Escape", "wait"], "and waits, so the next look sees it closed");
+  });
+
+  it("needs no target, so it works on a page whose overlay lists nothing to aim at", async () => {
+    const bare: Perception = { ...state, elements: [] };
+    const f = fake();
+    assert.equal(await act(f.page, bare, { action: "escape", reasoning: "" }), undefined);
+    assert.deepEqual(f.asked, ["key Escape", "wait"]);
+  });
+
+  it("ignores a target the model sent anyway, since Escape has nothing to aim at", async () => {
+    const f = fake();
+    const why = await act(f.page, state, { action: "escape", target: 1, reasoning: "" });
+    assert.equal(why, undefined);
+    assert.equal(
+      f.asked.some((a) => a.startsWith("locator") || a.startsWith("getByRole")),
+      false,
+      "no eight-second click at a control we were not asked to operate",
+    );
+  });
+
+  it("still refuses a target that names no element, on the verbs that need one", async () => {
+    const f = fake();
+    assert.equal(await act(f.page, state, { action: "click", target: 9, reasoning: "" }), "no element numbered 9");
   });
 });
 
