@@ -7,7 +7,6 @@ import { type ChatOptions, dailyHoldMs, groqJson } from "./groq";
 import {
   type AgentPage,
   looksPriced,
-  MAX_TEXT,
   perceive,
   renderState,
   resembles,
@@ -161,23 +160,6 @@ export function usable(raw: unknown): Decision | undefined {
 type Outcome =
   | { kind: "decided"; decision: Decision }
   | { kind: "unavailable"; why: string };
-
-/**
- * How much page prose to send the model. The whole perception on a page it has not
- * read yet, a slice on one it has: by the second visit it needs the controls, and
- * the free tier meters tokens per minute across the whole burst.
- *
- * The first number is MAX_TEXT itself, and that is the point. It was 2400 against a
- * 2800-character perception, and the 400 characters in the gap were the ones that
- * mattered: on docs.stripe.com/api/authentication the page states where an API key
- * comes from at character 1500 and carries `curl https://api.stripe.com/v1/charges`
- * at 2700, so the model was handed half of what it was sent to find, went looking
- * for the other half that was already in front of it, and never finished. The
- * grader reads all 2800. A grader reading text the model was never shown is
- * grading a page nobody visited.
- */
-const TEXT_FIRST = MAX_TEXT;
-const TEXT_LATER = 1100;
 
 /**
  * Built per run, not once at import, for two reasons.
@@ -433,11 +415,18 @@ export function recall(memory: Memory, p: Perception): string {
   // the right move; it is taking the same turning off it that costs the run the
   // budget, and the model is better placed than this code to know which of the
   // remaining ones is worth a step.
+  //
+  // What it must not say is that the answer cannot be here. It said exactly that
+  // for twelve integrate runs ("you would have it by now, so look somewhere else")
+  // while the page above it was being cut to 1100 characters, so the run was told
+  // to leave the one page that held what it was sent for, on the step where it
+  // could no longer see it. The page arrives whole now, and the instruction has to
+  // match: the moves are spent, the page is not.
   const before = visited(memory, p)?.moves;
   const again = before?.length
-    ? `\n\nYOU HAVE READ THIS PAGE ALREADY AND IT DID NOT FINISH THE TASK. FROM HERE YOU ALREADY TRIED:\n${before
+    ? `\n\nYOU HAVE BEEN ON THIS PAGE BEFORE. FROM HERE YOU ALREADY TRIED:\n${before
         .map((m) => `- ${m}`)
-        .join("\n")}\nRepeating any of those brings you back here. If the answer were on this page you would have it by now, so look somewhere else.`
+        .join("\n")}\nRepeating any of those brings you back here. The text above is the whole page, not a summary: read it before you spend a step leaving it, and if it already satisfies DONE WHEN, you are done.`
     : "";
   return `${recent}${inert}${read}${again}`;
 }
@@ -456,22 +445,30 @@ export function taskBlock(spec: ActionSpec): string {
 }
 
 /**
- * How much of this page's prose the model gets, this step.
+ * The whole message one step is decided on: the task, the page, and what the run
+ * already knows about it. Assembled in one place so a test and a probe can read the
+ * exact string the model reads, since none of it survives into the transcript.
  *
- * The whole thing on a page it has not read, the slice on one it has. Not "the
- * first step" alone: a run that reaches the docs page on step 4 is reading that
- * page for the first time on step 4, and handing it a third of the text there is
- * the same defect as handing it a third on step 1. isFirst is still taken as an
- * argument because step 0 has an empty memory with nothing to resemble.
+ * The page arrives whole, every step, on every page. It used to arrive whole once
+ * and then as an 1100-character slice on any page the run recognised, which sounds
+ * like thrift and is not. The model keeps nothing between calls, so the slice is not
+ * a reminder of a page it has read: it is a smaller page, handed over at the same
+ * moment recall() says this page was read already and the answer must be somewhere
+ * else. Across the stored integrate runs, 10 revisited steps were sent a page that
+ * held both halves of the task with at least one half past the cut. One run spent 7
+ * of its 10 steps on docs.stripe.com/api?lang=python, whose curl block begins at
+ * character 1170, hunting for a code sample it had been shown once and then denied.
  *
- * Exported to be tested without a browser or a model, which is the only way this
- * gets pinned: the failure it fixes is invisible in the transcript. The stored
- * perception carries both halves of the task, the grader reads both halves, and
- * the step reads "click Ruby to view a code example" because the model was shown
- * one half.
+ * The grader reads all 2800 characters. A grader reading text the model was never
+ * shown is grading a page nobody visited.
  */
-export function textBudget(p: Perception, memory: Memory, isFirst: boolean): number {
-  return isFirst || !visited(memory, p) ? TEXT_FIRST : TEXT_LATER;
+export function stepPrompt(
+  task: string,
+  p: Perception,
+  stepsLeft: number,
+  memory: Memory,
+): string {
+  return `${task}\n\n${renderState(p, stepsLeft)}${recall(memory, p)}`;
 }
 
 async function decide(
@@ -480,18 +477,15 @@ async function decide(
   stepsLeft: number,
   memory: Memory,
   timeoutMs: number,
-  isFirst: boolean,
   runId: string,
   meter: Meter = {},
   signal?: AbortSignal,
 ): Promise<Outcome> {
-  const state = renderState(p, stepsLeft, textBudget(p, memory, isFirst));
-
   try {
     const raw = await groqJson<unknown>(
       [
         { role: "system", content: systemPrompt(runId) },
-        { role: "user", content: `${task}\n\n${state}${recall(memory, p)}` },
+        { role: "user", content: stepPrompt(task, p, stepsLeft, memory) },
       ],
       { maxTokens: 600, temperature: 0.1, timeoutMs, ...meter, signal },
     );
@@ -1316,7 +1310,6 @@ export async function runAudit(opts: RunOptions): Promise<void> {
         maxSteps - i,
         memory,
         clock.cap(DECIDE_MS),
-        i === 0,
         runId,
         meter,
         signal,

@@ -854,13 +854,18 @@ export function resembles(a: Perception, b: Perception, threshold = 0.85): boole
   return shared / (A.length + B.size - shared) >= threshold;
 }
 
-/** Render the perception as the compact numbered state the model sees. */
-export function renderState(p: Perception, stepsLeft: number, textBudget = MAX_TEXT): string {
+/**
+ * Render the perception as the compact numbered state the model sees.
+ *
+ * All of the prose, every time. perceive() already stopped the text at MAX_TEXT on
+ * a line boundary, so there is nothing left here to ration, and the one thing that
+ * ever rationed it (a shorter slice for a page the run had visited before) was
+ * hiding the answer from the only step positioned to use it.
+ */
+export function renderState(p: Perception, stepsLeft: number): string {
   const els = p.elements.length
     ? p.elements.map(describe).join("\n")
     : "(none: the accessibility tree is empty)";
-
-  const prose = p.text.slice(0, Math.max(0, textBudget));
 
   return [
     `URL: ${p.url}`,
@@ -871,7 +876,7 @@ export function renderState(p: Perception, stepsLeft: number, textBudget = MAX_T
     els,
     "",
     "VISIBLE TEXT:",
-    prose || "(none)",
+    p.text || "(none)",
   ].join("\n");
 }
 

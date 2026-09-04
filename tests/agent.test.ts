@@ -8,15 +8,15 @@ import {
   priceOnFrontPage,
   recall,
   sameSite,
+  stepPrompt,
   systemPrompt,
   taskBlock,
-  textBudget,
   usable,
   withdrawFailure,
   withOurEmail,
 } from "../lib/agent";
 import { ACTIONS } from "../lib/actions";
-import { MAX_TEXT, renderState } from "../lib/perceive";
+import { MAX_TEXT } from "../lib/perceive";
 import type { Perception } from "../lib/types";
 
 /**
@@ -486,9 +486,24 @@ describe("recall: what the model is told it has already done from here", () => {
     const m = fresh();
     m.seen.push({ page: docs, moves: ['click "API Keys"'] });
     const said = recall(m, docs);
-    assert.match(said, /YOU HAVE READ THIS PAGE ALREADY/);
+    assert.match(said, /YOU HAVE BEEN ON THIS PAGE BEFORE/);
     assert.match(said, /- click "API Keys"/);
-    assert.match(said, /look somewhere else\./);
+    assert.match(said, /Repeating any of those brings you back here\./);
+  });
+
+  /**
+   * The sentence this replaced sent twelve runs away from the answer: "if the answer
+   * were on this page you would have it by now, so look somewhere else", printed
+   * under a page that had just been cut to 1100 characters. Spent moves are spent.
+   * A page is not, and nothing here may claim otherwise.
+   */
+  it("does not tell the run the answer cannot be on the page it is standing on", () => {
+    const m = fresh();
+    m.seen.push({ page: docs, moves: ['click "API Keys"'] });
+    const said = recall(m, docs);
+    assert.ok(!/look somewhere else/i.test(said), said);
+    assert.ok(!/would have it by now/i.test(said), said);
+    assert.match(said, /the whole page, not a summary/);
   });
 
   /**
@@ -561,7 +576,7 @@ describe("recall: what the model is told it has already done from here", () => {
   it("does not call a page it navigated to the page it left", () => {
     const m = fresh();
     m.seen.push({ page: docs, moves: ['click "API Keys"'] });
-    assert.ok(!recall(m, login).includes("READ THIS PAGE ALREADY"));
+    assert.ok(!recall(m, login).includes("BEEN ON THIS PAGE BEFORE"));
   });
 
   it("carries the other two blocks alongside it, since a lap is not the only thing worth knowing", () => {
@@ -575,7 +590,7 @@ describe("recall: what the model is told it has already done from here", () => {
     assert.match(said, /THESE LEFT THE PAGE EXACTLY AS IT WAS/);
     // In that order, so the most specific thing is the last thing read.
     assert.ok(said.indexOf("ALREADY TRIED") < said.indexOf("EXACTLY AS IT WAS"));
-    assert.ok(said.indexOf("EXACTLY AS IT WAS") < said.indexOf("READ THIS PAGE ALREADY"));
+    assert.ok(said.indexOf("EXACTLY AS IT WAS") < said.indexOf("BEEN ON THIS PAGE BEFORE"));
   });
 
   it("shows only the last five moves but every dead end, which is the point of keeping them apart", () => {
@@ -625,10 +640,10 @@ interface HangLocator extends FakeLocator {
  * agreed, and when they drift the run does not fail, it just quietly grades a page
  * nobody read.
  */
-describe("textBudget: the model reads what the grader reads", () => {
+describe("stepPrompt: what one step is decided on", () => {
   /** The answer, where docs keep it: at the very end of what perceive() kept. */
   const answer = "curl https://api.stripe.com/v1/charges -u sk_test_ANSWER";
-  /** A page filled to the allowance exactly, so a budget short by one loses it. */
+  /** A page filled to the allowance exactly, so any budget short by one loses it. */
   const long = (): Perception => ({
     url: "https://docs.stripe.com/api/authentication",
     title: "Authentication | Stripe API Reference",
@@ -644,43 +659,57 @@ describe("textBudget: the model reads what the grader reads", () => {
     ],
   });
   const fresh = (): Memory => ({ history: [], inert: new Set(), seen: [] });
+  const task = taskBlock(ACTIONS.integrate);
 
-  it("hands over the whole perception on the opening move", () => {
+  it("carries the whole page on the opening move", () => {
     const p = long();
-    assert.equal(textBudget(p, fresh(), true), MAX_TEXT);
-    assert.match(renderState(p, 9, textBudget(p, fresh(), true)), /sk_test_ANSWER/);
+    assert.equal(p.text.length, MAX_TEXT);
+    assert.ok(stepPrompt(task, p, 9, fresh()).includes(p.text));
   });
 
-  /**
-   * The half of this that "first step" alone never covered. A run reaches the docs
-   * page on step 4, reads a third of it, and leaves to look for what was on it.
-   */
-  it("hands over the whole perception on a page reached later and not yet read", () => {
+  it("carries the whole page on one reached later and not yet read", () => {
     const p = long();
     const m = fresh();
     m.seen.push({
       page: { ...p, url: "https://stripe.com/", title: "Stripe", elements: [] },
       moves: ['click "Docs"'],
     });
-    assert.equal(textBudget(p, m, false), MAX_TEXT);
-    assert.match(renderState(p, 6, textBudget(p, m, false)), /sk_test_ANSWER/);
+    assert.ok(stepPrompt(task, p, 6, m).includes(p.text));
   });
 
-  it("cuts it down on a page the run has already read to the end", () => {
+  /**
+   * The regression this suite exists for. Run mtmp2joi-4t6ypo spent 7 of its 10
+   * steps on docs.stripe.com/api?lang=python, whose curl block begins at character
+   * 1170. Every one of those steps was a revisit, so every one was sent 1100
+   * characters: the page held both halves of what integrate asks for, and the model
+   * was handed one of them, under a note saying the page had been read already.
+   */
+  it("carries the whole page on one the run has already read to the end", () => {
     const p = long();
     const m = fresh();
-    m.seen.push({ page: p, moves: ['click "API keys"'] });
-    const budget = textBudget(p, m, false);
-    assert.ok(budget < MAX_TEXT, `a page read already should not be re-read in full, got ${budget}`);
-    assert.ok(!renderState(p, 4, budget).includes("sk_test_ANSWER"));
-    // Still the controls, which is what a second visit is for.
-    assert.match(renderState(p, 4, budget), /\[link\] API keys/);
+    m.seen.push({ page: p, moves: ['click "Ruby"'] });
+    const said = stepPrompt(task, p, 4, m);
+    assert.ok(said.includes(p.text), "a page seen before is still the whole page");
+    assert.match(said, /sk_test_ANSWER/);
+    // And the note that it has been here, since both belong in the same message.
+    assert.match(said, /YOU HAVE BEEN ON THIS PAGE BEFORE/);
+    assert.match(said, /- click "Ruby"/);
   });
 
-  it("cuts nothing off the first page even when it fills the whole allowance", () => {
+  it("states the task and its completion test every step, not just the first", () => {
+    const said = stepPrompt(task, long(), 1, fresh());
+    assert.match(said, /^TASK: /);
+    assert.match(said, /DONE WHEN: /);
+    assert.match(said, /STEPS REMAINING: 1/);
+  });
+
+  it("puts the page between the task and what the run remembers", () => {
     const p = long();
-    assert.equal(p.text.length, MAX_TEXT);
-    assert.ok(renderState(p, 9, textBudget(p, fresh(), true)).includes(p.text));
+    const m = fresh();
+    m.seen.push({ page: p, moves: ['click "Ruby"'] });
+    const said = stepPrompt(task, p, 4, m);
+    assert.ok(said.indexOf("DONE WHEN:") < said.indexOf("VISIBLE TEXT:"));
+    assert.ok(said.indexOf("VISIBLE TEXT:") < said.indexOf("BEEN ON THIS PAGE BEFORE"));
   });
 });
 
