@@ -294,7 +294,7 @@ describe("act: a control that cannot be operated", () => {
       target: 2,
       reasoning: "Submit the form",
     });
-    assert.match(why ?? "", /button "Start my free trial" is disabled/);
+    assert.match(failure(why), /button "Start my free trial" is disabled/);
     assert.deepEqual(f.asked, [], "and never reaches for it, which is the eight seconds saved");
   });
 
@@ -306,7 +306,7 @@ describe("act: a control that cannot be operated", () => {
       value: "anything",
       reasoning: "Fill it",
     });
-    assert.match(why ?? "", /is disabled, so a type on it cannot land/);
+    assert.match(failure(why), /is disabled, so a type on it cannot land/);
     assert.deepEqual(f.asked, []);
   });
 
@@ -318,7 +318,113 @@ describe("act: a control that cannot be operated", () => {
   });
 });
 
-/** The same locator, plus the one question asked of a control that would not move. */
+/** The failure text of an outcome, since a substitution is not one. */
+const failure = (out: Awaited<ReturnType<typeof act>>): string =>
+  typeof out === "string" ? out : "";
+
+/**
+ * A control that is a dropdown to a visitor and not one to the browser.
+ *
+ * Measured on Stripe's registration form, step 8 and step 9 of one run: the country
+ * picker refused `selectOption` with "Element is not a <select> element" and then
+ * refused `fill` with "Element is not an <input>, <textarea> or [contenteditable]
+ * element". Two refusals is form-stall, so the run was graded with a blocker
+ * pointing its owner at a form that works, and step 10 clicked the same control and
+ * it opened. Nothing was wrong with the site. We reached for the native mechanism
+ * and a custom widget does not answer it.
+ */
+describe("act: a custom widget refusing the mechanism, not the visitor", () => {
+  /** A page whose fill and selectOption refuse by kind, the way Playwright does. */
+  const wrongKind = (clickWorks = true) => {
+    const asked: string[] = [];
+    const locator: FakeLocator = {
+      first: () => locator,
+      click: async () => {
+        asked.push("click");
+        if (!clickWorks) throw new Error("locator.click: Timeout 8000ms exceeded.");
+      },
+      fill: async () => {
+        throw new Error(
+          "locator.fill: Error: Element is not an <input>, <textarea> or [contenteditable] element",
+        );
+      },
+      selectOption: async () => {
+        throw new Error("locator.selectOption: Error: Element is not a <select> element");
+      },
+    };
+    const page = {
+      locator: () => locator,
+      getByRole: () => locator,
+      waitForLoadState: async () => {},
+      waitForTimeout: async () => {},
+      mouse: { wheel: async () => {} },
+    };
+    return { asked, page: page as unknown as Parameters<typeof act>[0] };
+  };
+
+  const state: Perception = {
+    url: "https://dashboard.stripe.com/register",
+    title: "Create a Stripe account",
+    text: "Country",
+    jsGated: false,
+    hasPrice: false,
+    elements: [{ index: 1, role: "combobox", name: "Select country", ref: "e21" }],
+  };
+
+  it("clicks the widget open rather than charging the site for our mechanism", async () => {
+    const f = wrongKind();
+    const out = await act(f.page, state, {
+      action: "select",
+      target: 1,
+      value: "United States",
+      reasoning: "Set the country",
+    });
+    assert.equal(typeof out, "object", "a substitution, not a failure string");
+    assert.match((out as { instead: string }).instead, /clicked open instead; nothing is chosen yet/);
+    assert.deepEqual(f.asked, ["click"]);
+  });
+
+  it("says nothing was typed when a fill was the thing refused", async () => {
+    const out = await act(wrongKind().page, state, {
+      action: "type",
+      target: 1,
+      value: "United States",
+      reasoning: "Type the country",
+    });
+    assert.match((out as { instead: string }).instead, /nothing is typed yet/);
+  });
+
+  it("reports a failure when the widget will not open either", async () => {
+    const out = await act(wrongKind(false).page, state, {
+      action: "select",
+      target: 1,
+      value: "United States",
+      reasoning: "",
+    });
+    assert.equal(out, 'combobox "Select country" would not accept a select, and a click to open it did not land either');
+  });
+
+  it("leaves a refusal about the element's state charged, since that one is the site's", async () => {
+    const locator: FakeLocator = {
+      first: () => locator,
+      click: async () => {},
+      fill: async () => {
+        throw new Error("locator.fill: Error: Element is not visible");
+      },
+      selectOption: async () => [],
+    };
+    const page = {
+      locator: () => locator,
+      getByRole: () => locator,
+      waitForLoadState: async () => {},
+      waitForTimeout: async () => {},
+      mouse: { wheel: async () => {} },
+    } as unknown as Parameters<typeof act>[0];
+    const out = await act(page, state, { action: "type", target: 1, value: "x", reasoning: "" });
+    assert.equal(out, 'combobox "Select country" would not accept a type: locator.fill: Error: Element is not visible');
+  });
+});
+
 interface HangLocator extends FakeLocator {
   evaluate?(fn: (node: Element) => string): Promise<string>;
 }
@@ -374,7 +480,7 @@ describe("act: an operation the browser never finishes", () => {
   const raced = async (
     page: Parameters<typeof act>[0],
     d: Parameters<typeof act>[2],
-  ): Promise<string | undefined> => {
+  ): Promise<Awaited<ReturnType<typeof act>>> => {
     mock.timers.enable({ apis: ["setTimeout"] });
     try {
       const running = act(page, state, d);
@@ -398,7 +504,7 @@ describe("act: an operation the browser never finishes", () => {
 
   it("says as much when the page reports nothing on top of it", async () => {
     const why = await raced(hangingPage(""), { action: "click", target: 1, reasoning: "" });
-    assert.match(why ?? "", /within 10s, and nothing is covering it, so the browser never finished/);
+    assert.match(failure(why), /within 10s, and nothing is covering it, so the browser never finished/);
   });
 
   it("offers no explanation it does not have", async () => {
@@ -413,7 +519,7 @@ describe("act: an operation the browser never finishes", () => {
       value: "hello",
       reasoning: "",
     });
-    assert.match(why ?? "", /did not accept a type within 10s/);
+    assert.match(failure(why), /did not accept a type within 10s/);
   });
 });
 

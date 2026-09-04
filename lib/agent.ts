@@ -482,8 +482,40 @@ async function whatIntercepts(locator: Locatorish): Promise<string | undefined> 
 }
 
 
-/** Execute one decision. Returns an error string when the element would not budge. */
-export async function act(page: ActPage, p: Perception, d: Decision): Promise<string | undefined> {
+/**
+ * A step that did something other than what it was asked, and did it on purpose.
+ *
+ * Not a failure, and it must not be counted as one. But it cannot be silence
+ * either: the model asked for a value to be set, the value was not set, and a
+ * history line reading "(ok)" would have it believe the field is filled and go
+ * looking for the submit.
+ */
+export interface Substituted {
+  /** What was done instead, and what is still owed, in the words the model reads. */
+  instead: string;
+}
+
+/**
+ * Playwright refusing an element for its kind rather than for its state.
+ *
+ * `selectOption` answers "Element is not a <select> element" and `fill` answers
+ * "Element is not an <input>, <textarea> or [contenteditable] element". Both mean
+ * we reached for the wrong mechanism, not that the page is broken. Their other
+ * refusals ("not attached", "not visible", "not enabled") are about state, are the
+ * site's to answer for, and are not followed by a tag name, which is what keeps
+ * this narrow.
+ */
+const WRONG_KIND = /element is not an? </i;
+
+/**
+ * Execute one decision. Returns an error string when the element would not budge,
+ * or a Substituted when it took a different route to the same intent.
+ */
+export async function act(
+  page: ActPage,
+  p: Perception,
+  d: Decision,
+): Promise<string | Substituted | undefined> {
   const settle = async () => {
     await page.waitForLoadState("domcontentloaded", { timeout: 8000 }).catch(() => {});
     await page.waitForTimeout(900);
@@ -559,6 +591,32 @@ export async function act(page: ActPage, p: Perception, d: Decision): Promise<st
       return `${el.role} "${el.name}" did not accept a ${d.action} within ${secs}s${tail}`;
     }
     const why = (err instanceof Error ? err.message : String(err)).split("\n")[0].slice(0, 120);
+
+    // The control is a custom widget, not the native one we reached for. That is
+    // ordinary modern UI and no defect at all: a visitor clicks it and picks from
+    // what opens, and so can an agent. Measured on Stripe's registration form,
+    // where the country picker refused both selectOption and fill inside one run
+    // and the two refusals tripped form-stall, pointing the owner at a form that
+    // works.
+    //
+    // So click it open and say so. One extra step, spent on the choices the page
+    // actually offers rather than on a guess at which option node to press: an
+    // option that is not where we assumed would cost a click's whole timeout and
+    // invent the second false failure in place of the first.
+    if (WRONG_KIND.test(why) && (d.action === "select" || d.action === "type")) {
+      try {
+        await bounded(locator.click({ timeout: CLICK_MS }), CLICK_MS);
+        await settle();
+        return {
+          instead:
+            d.action === "select"
+              ? "not a dropdown the browser can set, so it was clicked open instead; nothing is chosen yet"
+              : "not a text field the browser can fill, so it was clicked instead; nothing is typed yet",
+        };
+      } catch {
+        return `${el.role} "${el.name}" would not accept a ${d.action}, and a click to open it did not land either`;
+      }
+    }
     return `${el.role} "${el.name}" would not accept a ${d.action}: ${why}`;
   }
   return undefined;
@@ -1022,9 +1080,13 @@ export async function runAudit(opts: RunOptions): Promise<void> {
       // no timeout of their own, and a dead CDP socket makes every one of them
       // wait forever.
       let error: string | undefined;
+      /** What was done instead, when act() took another route. Never a failure. */
+      let instead: string | undefined;
       let wedged = false;
       try {
-        error = await withTimeout(act(page, p, d), clock.cap(ACT_MS), "the action");
+        const outcome = await withTimeout(act(page, p, d), clock.cap(ACT_MS), "the action");
+        if (typeof outcome === "string") error = outcome;
+        else if (outcome) instead = outcome.instead;
       } catch (err) {
         error = err instanceof Error ? err.message : String(err);
         // Our ceiling fired, not Playwright's. The element did not refuse: the
@@ -1035,12 +1097,15 @@ export async function runAudit(opts: RunOptions): Promise<void> {
       if (error && !wedged) failures.push(error);
       stalls = wedged ? stalls + 1 : 0;
       const move = `${d.action}${el ? ` "${el.name}"` : ""}`;
-      memory.history.push(`- ${move}${error ? ` FAILED: ${error}` : " (ok)"}`);
+      memory.history.push(
+        `- ${move}${error ? ` FAILED: ${error}` : instead ? ` (${instead})` : " (ok)"}`,
+      );
       // Left for the next perception to judge: whether it did nothing, and whether
       // a click that reported a failure in fact landed. Our own ceiling firing is
       // never the site's to answer for, so a wedged step carries no charge to
-      // withdraw.
-      if (d.action === "click" || d.action === "back") {
+      // withdraw. A substitution is watched for the same reason a click is: it was
+      // one, and a widget that opened nothing is worth knowing about.
+      if (d.action === "click" || d.action === "back" || instead) {
         pending = {
           key: move,
           before: fingerprint(p),
@@ -1063,6 +1128,16 @@ export async function runAudit(opts: RunOptions): Promise<void> {
         elementCount: p.elements.length,
         at: now(),
       });
+
+      // Said out loud, because a step that reports ok while the field it names is
+      // still empty is the sort of thing a witness has to be able to see.
+      if (instead) {
+        await emit({
+          type: "status",
+          message: `${el?.role ?? "That control"} "${el?.name ?? ""}" is ${instead}.`,
+          at: now(),
+        });
+      }
 
       // Read after the step is reported, so the note about where a click sent the
       // visitor follows the click rather than preceding it.
