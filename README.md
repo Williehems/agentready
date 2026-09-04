@@ -1,0 +1,185 @@
+# AgentReady
+
+Point it at a URL. A real cloud browser, driven by a model that can only see what
+the accessibility tree exposes, tries to do the one thing the site exists for.
+You get back a letter grade, the reasons, and the replay.
+
+Not a Lighthouse score. Not a checklist. An agent either finished or it did not,
+and the transcript says which.
+
+```
+An AI agent completed "integrate the api" in 1 step. What proves it:
+a code example ("import { Resend } from 'resend';") and a route to a key ("api key").
+```
+
+```
+An AI agent failed to book an appointment. It found the right button and still
+could not finish. Primary blocker: dead-end-cta.
+```
+
+Both of those are real verdicts from runs in this repository. The second one is
+about a site I built and shipped myself, which is the only kind of failing grade
+I am willing to publish about a named host.
+
+## The question
+
+Every site is now read by two audiences. One has eyes. The other has a context
+window, no rendered pixels, and a budget of maybe ten steps before it gives up on
+you. Analytics measures the first audience exhaustively and the second one not at
+all.
+
+So: can an agent sign up, buy, integrate, book, or contact you? That is the whole
+product surface. Five actions, one answer each.
+
+## What it does, and what it does not
+
+**Test.** A Solari stealth browser opens the URL. `lib/perceive.ts` reduces the
+page to the interactive controls an agent can actually address, by role and
+accessible name, plus the trimmed visible text and the code-shaped lines. Groq
+picks one move per turn. `lib/agent.ts` executes it and looks again. Up to ten
+turns.
+
+**Witness.** Every turn is streamed to the browser as NDJSON while it happens:
+what the agent chose, on what, and its own one-line reason for choosing it. The
+run is written to disk with its screenshots, and the Solari session id is kept so
+the video replay can be fetched later.
+
+**Deferred by design:** Fix (patch suggestions), Certify (a badge), Monitor
+(scheduled re-runs). All three are designed and none are built. This is local
+first, and there is no database: runs are JSON files under `public/runs/`.
+
+## How the letter is computed
+
+Four checkpoints, each worth points, and nothing else earns any:
+
+| Checkpoint | Points | Earned when |
+| --- | --- | --- |
+| `understood-offering` | 15 | The page says what it sells in text a machine can read |
+| `found-key-info` | 20 | The thing the action needs was reachable: a price, a key, a form |
+| `found-cta` | 25 | The control that performs the action was present and operable |
+| `completed-action` | 40 | The agent declared done **and** the page showed an end state that agrees |
+
+`A >= 88`, `B >= 72`, `C >= 55`, `D >= 35`, otherwise `F`. A hard blocker caps the
+score at 45 no matter what was reached. An explicit give-up caps it at 55.
+
+That last checkpoint is the one that matters and the one that is hard to be honest
+about. A model that says "I have completed the signup" has not completed the
+signup. So `completed-action` needs the claim **and** independent corroboration
+read back off the page, in the page's own words, and the summary quotes what it
+found so a reader can disagree with it.
+
+The blockers are named, never inferred by an LLM: `bot-wall`, `captcha`,
+`js-gate`, `verification-gate`, `no-structured-price`, `dead-end-cta`,
+`form-stall`, `auth-gate`, `nav-error`, `loop`.
+
+## The one design decision worth reading the code for
+
+**A transcript stores evidence, not conclusions.**
+
+`lib/store.ts` recomputes the verdict from the stored transcript on every single
+read. It never reads a saved grade. That means fixing the grader retroactively
+fixes every run already on disk, and a run's letter is always the current
+grader's opinion rather than a fossil.
+
+This was learned the expensive way. `Perception` used to carry `hasCode: true`,
+a boolean decided at capture time. When the grader was corrected, the board showed
+the same docs.stripe.com audit at C 60 and A 100 simultaneously, because half the
+verdict was being recomputed and half had been frozen months earlier. The fix was
+to store `code`, the actual code-shaped lines off the page, and move the judgement
+to grade time. Widening the regex now re-reads history. One run, `mtn01prs-u59fcq`,
+can never be corrected, because the page it saw was never written down.
+
+The same principle caught a subtler bug. The proof of a working integration was
+matched against the whole page as one string, so docs.stripe.com's sentence "the
+Stripe API Docs demonstrate using curl to interact with the API over HTTP"
+supplied the half of the proof worth 40 points. Prose about curl is not a curl
+call. Credit now has to land on a line that reads as code.
+
+## Run it
+
+Node 20 or newer. Two keys, both in `.env.local`:
+
+```bash
+cp .env.local.example .env.local
+```
+
+- `SOLARI_API_KEY` from [getsolari.com](https://getsolari.com). Stealth is a paid
+  plan feature. Without it, launches fall back to a plain browser and
+  `lib/solari.ts` reports `stealth: false`, which honestly weakens any
+  `bot-wall` finding the run produces.
+- `GROQ_API_KEY` from [console.groq.com](https://console.groq.com). Free tier is
+  enough. Model is `openai/gpt-oss-120b`, set in `lib/groq.ts`.
+
+```bash
+npm install
+npm run dev
+```
+
+Landing page at `/`, the audit console at `/audit`, the board at `/runs`.
+
+```bash
+npm run typecheck && npm test
+```
+
+389 tests, no network, no keys needed. They cover `lib/` only: the grader, the
+perception reduction, the agent loop's decision handling, the Solari error
+mapping. The API routes and the components are not tested yet.
+
+Without keys the board and the three shipped example runs still render, and
+`/audit` returns a plain sentence saying which key is missing rather than
+crashing.
+
+## What it costs to run
+
+Measured across the 36 graded runs on disk: 185 Groq calls, 362,337 prompt tokens,
+19,299 completion tokens, so about **1,959 prompt tokens per step**. Groq's free
+tier allows 200,000 tokens a day, which is roughly seven full ten step runs.
+A measured two step run took 25 seconds end to end including the browser launch,
+so a ten step run is a couple of minutes plus any rate limit hold. The agent says
+out loud when it is being held by our own free tier, because a throttled agent and
+a stalled site look identical in a replay and the difference is whose fault it is.
+
+Cash cost of every test in this repository: nothing beyond the Solari plan.
+
+## What has been measured
+
+36 graded runs across 11 hosts, 205 page perceptions. 25 of them ran to their own
+end, and those are the only letters a site owns: 4 A, 10 C, 10 D, 1 F. The other
+11 were stopped by our side or never reached the site at all, and the board marks
+those `cut short` or `no verdict` instead of handing out a letter. An F earned
+because a browser provider answered 503 is a libel, not a finding.
+
+By action: 22 integrate, 11 signup, 2 contact, 1 book.
+
+Three runs ship in `examples/` so a fresh clone has something real to show. Their
+screenshots do not ship: those stay on the machine that ran them, and the run page
+says so rather than showing broken images.
+
+Sites that failed and why, from real runs: a booking form whose submit opened
+WhatsApp in a second tab and told the first tab nothing, so the agent had no way
+to know whether the booking existed. A signup behind an email verification gate.
+A signup behind a captcha. A contact page behind a bot wall. A page with no price
+anywhere in machine readable text.
+
+## Limits, stated plainly
+
+- Ten steps. A checkout that takes twelve is graded as unfinished, because to a
+  real agent on a budget it is unfinished.
+- The page text handed to the model is trimmed to 2,800 characters, so on long
+  pages the model is answering about a prefix.
+- The stored code evidence is capped at 1,200 characters. A page whose only call
+  sits below more than that much JSON is stored without it. Lines are kept whole
+  or dropped, never truncated, because a Stripe CLI invocation does not prove
+  itself code until character 230.
+- No account is ever actually created on a third party's site. Live verification
+  uses `integrate` against documentation, which is read only.
+- A run is a sample. `docs.stripe.com/api/authentication` has been audited seven
+  times: both runs that were allowed to finish came back A 100, and the other five
+  were aborted by our side and are reported as having no letter. That consistency
+  is reassuring and it is also two data points.
+
+## Stack
+
+Next.js 14 App Router, TypeScript strict, Tailwind.
+[`@solarisdk/browser`](https://www.npmjs.com/package/@solarisdk/browser) pinned at
+exactly `0.1.1` for the browsers. Groq for the decisions. No database.
