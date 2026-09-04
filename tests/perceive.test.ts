@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { fingerprint, modalIsOpen, parseAriaSnapshot, renderState } from "../lib/perceive";
+import { fingerprint, marks, modalIsOpen, parseAriaSnapshot, renderState, resembles } from "../lib/perceive";
 import type { Perception } from "../lib/types";
 
 /**
@@ -738,5 +738,148 @@ describe("fingerprint: what counts as the same page", () => {
    */
   it("holds still across a click that landed and did nothing", () => {
     assert.equal(fingerprint(page()), fingerprint(page()));
+  });
+});
+
+/**
+ * The looser question, for the run's own memory: is this the same page, allowing
+ * for the parts of it that move by themselves?
+ *
+ * Needed because plenty of pages are never twice the same. Measured on run 6 of
+ * docs.stripe.com: across four snapshots of a home page nobody had touched, two of
+ * its sixty elements read "jenny.rosen@example.com", then "$ stripe balance
+ * retrieve", then "false", then "https://example.com/success". Eight perceptions
+ * in that run, eight different fingerprints, four of them the same page. So every
+ * guard that asked "did that do anything" answered yes to a click that had
+ * navigated nowhere, and no page was ever recorded as visited twice.
+ *
+ * The overlaps measured on those real element sets, which is where the threshold
+ * comes from: 0.93 and 0.87 for the same page, 0.63 and 0.28 for a menu opening,
+ * 0.01 and 0.00 for a navigation. These are built at the width they were measured
+ * at, sixty marks, because the width is most of the answer: two changing out of
+ * sixty is 0.94 shared and two out of four is 0.33.
+ */
+describe("resembles: the same page, with something ticking on it", () => {
+  const wide = (over: Partial<Perception> = {}, sample = "jenny.rosen@example.com"): Perception => ({
+    url: "https://docs.stripe.com/",
+    title: "Stripe API and developer documentation",
+    text: "Get started with payments.",
+    jsGated: false,
+    hasPrice: false,
+    elements: [
+      ...Array.from({ length: 58 }, (_, i) => ({
+        index: i + 1,
+        role: "link",
+        name: `Section ${i + 1}`,
+        ref: `e${i}`,
+      })),
+      { index: 59, role: "code", name: sample, ref: "e59" },
+      { index: 60, role: "button", name: "Copy", ref: "e60" },
+    ],
+    ...over,
+  });
+
+  it("calls a page with a rotating sample on it the page it was a step ago", () => {
+    assert.ok(resembles(wide(), wide({}, "$ stripe balance retrieve")));
+  });
+
+  it("survives the sample rotating twice more, which is what a four-step visit costs", () => {
+    assert.ok(resembles(wide({}, "false"), wide({}, "https://example.com/success")));
+  });
+
+  it("says no to a different URL before it counts anything, since a copy is not the original", () => {
+    assert.ok(!resembles(wide(), wide({ url: "https://docs.stripe.com/keys" })));
+  });
+
+  /** 0.01 and 0.00 measured. Nothing about a login page resembles the docs. */
+  it("says no to a navigation, where almost nothing is shared", () => {
+    const login = wide({
+      url: "https://docs.stripe.com/",
+      title: "Sign in to Stripe",
+      elements: [
+        { index: 1, role: "textbox", name: "Email", ref: "e1" },
+        { index: 2, role: "textbox", name: "Password", ref: "e2" },
+        { index: 3, role: "button", name: "Continue", ref: "e3" },
+      ],
+    });
+    assert.ok(!resembles(wide(), login));
+  });
+
+  /** 0.63 and 0.28 measured, on stripe.com, where a menu put real controls on screen. */
+  it("says no when a menu opens, because that is the page answering", () => {
+    const opened = wide();
+    opened.elements = [
+      ...opened.elements,
+      ...Array.from({ length: 30 }, (_, i) => ({
+        index: 61 + i,
+        role: "link",
+        name: `Product ${i + 1}`,
+        ref: `m${i}`,
+      })),
+    ];
+    assert.ok(!resembles(wide(), opened));
+  });
+
+  it("notices a field being filled, which is the quietest progress there is", () => {
+    const typed = wide();
+    typed.elements = [
+      ...typed.elements.slice(0, 58),
+      { index: 59, role: "textbox", name: "Search", ref: "e59", value: "webhooks" },
+      { index: 60, role: "button", name: "Copy", ref: "e60" },
+    ];
+    const empty = wide();
+    empty.elements = [
+      ...empty.elements.slice(0, 58),
+      { index: 59, role: "textbox", name: "Search", ref: "e59" },
+      { index: 60, role: "button", name: "Copy", ref: "e60" },
+    ];
+    // One mark of sixty, so it is inside the threshold and reads as the same page.
+    // Correct for the memory that uses it: typing into a box leaves you standing
+    // where you were, and the moves already tried from here are still the moves
+    // already tried from here.
+    assert.ok(resembles(empty, typed));
+  });
+
+  it("holds an empty page against an empty page by its title, having nothing else to go on", () => {
+    const blank = wide({ elements: [] });
+    assert.ok(resembles(blank, wide({ elements: [] })));
+    assert.ok(!resembles(blank, wide({ elements: [], title: "Something else" })));
+  });
+
+  it("is a threshold, not a rule, so a caller that wants exactness can ask for it", () => {
+    assert.ok(!resembles(wide(), wide({}, "false"), 1));
+    assert.ok(resembles(wide(), wide(), 1));
+  });
+});
+
+/**
+ * The marks are what both of the above compare. Pinned separately because they are
+ * the only place `ref` could leak into a comparison, and a ref is minted per
+ * snapshot: one leaking in makes every page a page never seen before.
+ */
+describe("marks: the page as a list of things that can be told apart", () => {
+  const p: Perception = {
+    url: "https://example.com/",
+    title: "Example",
+    text: "Hello.",
+    jsGated: false,
+    hasPrice: false,
+    elements: [
+      { index: 1, role: "textbox", name: "Email", ref: "e1", value: "a@b.co" },
+      { index: 2, role: "button", name: "Continue", ref: "e2", disabled: true },
+    ],
+  };
+
+  it("carries role, name, value and whether the control is live", () => {
+    assert.deepEqual(marks(p), ["textbox:Email:a@b.co:on", "button:Continue::off"]);
+  });
+
+  it("leaves the ref out, since a ref says only which snapshot it came from", () => {
+    const again = { ...p, elements: p.elements.map((e, i) => ({ ...e, ref: `z${i}` })) };
+    assert.deepEqual(marks(p), marks(again));
+  });
+
+  it("is what fingerprint joins, so the two can never drift apart", () => {
+    assert.ok(fingerprint(p).endsWith(marks(p).join("|")));
   });
 });

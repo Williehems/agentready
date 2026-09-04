@@ -4,7 +4,7 @@ import { z } from "zod";
 import { ACTIONS, type ActionSpec, handoffLabel, isDeadEndHref } from "./actions";
 import { Deadline, TimeoutError, withTimeout } from "./deadline";
 import { groqJson, type ChatOptions } from "./groq";
-import { type AgentPage, fingerprint, looksPriced, perceive, renderState } from "./perceive";
+import { type AgentPage, looksPriced, perceive, renderState, resembles } from "./perceive";
 import { grade, type Transcript } from "./grade";
 import { closeClient, launchBrowser, releaseSession } from "./solari";
 import type { ActionKind, Perception, RunEvent, StepAction } from "./types";
@@ -316,8 +316,12 @@ type Meter = Pick<ChatOptions, "onUsage" | "onWait">;
  * "Continue with email", click "Docs", and then those same four again, six of ten
  * steps spent going round twice. Every one of those steps changed the page, so
  * nothing was inert, and no two perceptions in a row matched, so the grader saw no
- * loop. What repeated was the lap. Keyed by page state rather than by URL, because
+ * loop. What repeated was the lap. Held as page states rather than URLs, because
  * the login form before and after it was submitted is not the same page.
+ *
+ * Both halves compare pages by resemblance rather than by equality, because a page
+ * with a ticking element is never twice the same and both of these were silent on
+ * every such site. See resembles() for the rotating code sample that proved it.
  *
  * This changes what the agent spends its steps on and nothing about what the
  * site is charged with: the loop blocker still comes from the grader reading
@@ -327,8 +331,28 @@ export interface Memory {
   history: string[];
   /** Actions, phrased as the prompt names them, that left the page unchanged. */
   inert: Set<string>;
-  /** Page state, to the moves already made from it. */
-  seen: Map<string, string[]>;
+  /** Every page stood on, with the moves already made from it. */
+  seen: { page: Perception; moves: string[] }[];
+}
+
+/**
+ * The remembered visit to the page being stood on now, if there is one.
+ *
+ * A list searched by resemblance rather than a map keyed by fingerprint, because
+ * an exact key finds nothing on any page that changes by itself, and the pages
+ * this is here to catch are ordinary marketing and docs pages with a rotating
+ * sample or a live counter on them. Newest first, since the common case is having
+ * just come back.
+ *
+ * The stored perception stays as it was first seen. Refreshing it to the newest
+ * snapshot would let a slowly changing page walk its own anchor away a mark at a
+ * time and stop resembling where it started.
+ */
+function visited(memory: Memory, p: Perception): { page: Perception; moves: string[] } | undefined {
+  for (let i = memory.seen.length - 1; i >= 0; i--) {
+    if (resembles(memory.seen[i].page, p)) return memory.seen[i];
+  }
+  return undefined;
 }
 
 /**
@@ -358,9 +382,9 @@ export function recall(memory: Memory, p: Perception): string {
   // the right move; it is taking the same turning off it that costs the run the
   // budget, and the model is better placed than this code to know which of the
   // remaining ones is worth a step.
-  const before = memory.seen.get(fingerprint(p));
+  const before = visited(memory, p)?.moves;
   const again = before?.length
-    ? `\n\nYOU HAVE BEEN ON THIS EXACT PAGE BEFORE. FROM HERE YOU ALREADY TRIED:\n${before
+    ? `\n\nYOU HAVE BEEN ON THIS PAGE BEFORE. FROM HERE YOU ALREADY TRIED:\n${before
         .map((m) => `- ${m}`)
         .join("\n")}\nRepeating any of those brings you back here. Choose something else.`
     : "";
@@ -808,7 +832,7 @@ export async function runAudit(opts: RunOptions): Promise<void> {
 
   const perceptions: Perception[] = [];
   const failures: string[] = [];
-  const memory: Memory = { history: [], inert: new Set(), seen: new Map() };
+  const memory: Memory = { history: [], inert: new Set(), seen: [] };
   /**
    * The last click, and the page as it stood the moment before it. Read once, on
    * the next perception, which is the earliest anything can know whether it did
@@ -816,12 +840,16 @@ export async function runAudit(opts: RunOptions): Promise<void> {
    * page where it is, and a scroll moves the viewport without moving anything
    * this can see.
    *
+   * The page is held whole rather than as a fingerprint, because "did that do
+   * anything" is a question about resemblance: a site with a rotating code sample
+   * answers yes to every click if the test is equality.
+   *
    * `charge` is the failure this step recorded, if it recorded one. It is charged
    * now and withdrawn on evidence rather than held back until the evidence
    * arrives, so a run that ends before any arrives reports exactly what it always
    * did: a click nobody can show landed is a click that did not land.
    */
-  let pending: { key: string; before: string; line: number; charge?: string } | undefined;
+  let pending: { key: string; before: Perception; line: number; charge?: string } | undefined;
 
   /**
    * Withdraw a failure from a click that turned out to have worked.
@@ -1028,13 +1056,11 @@ export async function runAudit(opts: RunOptions): Promise<void> {
 
       const p = await perceive(page, clock.cap(PERCEIVE_MS));
       perceptions.push(p);
-      /** This page, as the memory of what was tried from it is keyed. */
-      const here = fingerprint(p);
 
       // Did the last click do anything? This is the only place that can answer,
       // and the answer goes back into the prompt rather than into the verdict.
       if (pending) {
-        if (here === pending.before) {
+        if (resembles(pending.before, p)) {
           // Nothing moved. A click that also reported a failure is left charged:
           // it did nothing and said so, which is one finding, not two, and the
           // FAILED line already tells the model not to choose it again.
@@ -1152,8 +1178,12 @@ export async function runAudit(opts: RunOptions): Promise<void> {
       // which turnings have already been taken. Recorded whatever it did: a move
       // that failed from here is as much a reason not to take it again as one that
       // worked, and one that worked is what makes a lap a lap.
-      const fromHere = memory.seen.get(here) ?? [];
-      if (!fromHere.includes(move)) memory.seen.set(here, [...fromHere, move]);
+      const here = visited(memory, p);
+      if (here) {
+        if (!here.moves.includes(move)) here.moves.push(move);
+      } else {
+        memory.seen.push({ page: p, moves: [move] });
+      }
       memory.history.push(
         `- ${move}${error ? ` FAILED: ${error}` : instead ? ` (${instead})` : " (ok)"}`,
       );
@@ -1165,7 +1195,7 @@ export async function runAudit(opts: RunOptions): Promise<void> {
       if (d.action === "click" || d.action === "back" || instead) {
         pending = {
           key: move,
-          before: here,
+          before: p,
           line: memory.history.length - 1,
           charge: error && !wedged ? error : undefined,
         };

@@ -554,14 +554,53 @@ export async function perceive(page: AgentPage, timeoutMs = PERCEIVE_MS): Promis
  * looked at, which is the one thing this must never say.
  */
 export function fingerprint(p: Perception): string {
-  return [
-    p.url,
-    p.title,
-    p.elements.length,
-    p.elements
-      .map((e) => `${e.role}:${e.name}:${e.value ?? ""}:${e.disabled ? "off" : "on"}`)
-      .join("|"),
-  ].join("~");
+  return [p.url, p.title, p.elements.length, marks(p).join("|")].join("~");
+}
+
+/**
+ * One page as the set of things on it that can be told apart.
+ *
+ * The same strings `fingerprint` joins, handed back as a list so two pages can be
+ * compared by how much they share rather than only by whether they match.
+ */
+export function marks(p: Perception): string[] {
+  return p.elements.map((e) => `${e.role}:${e.name}:${e.value ?? ""}:${e.disabled ? "off" : "on"}`);
+}
+
+/**
+ * Is this the same page as that one, allowing for the parts of it that move by
+ * themselves?
+ *
+ * Because plenty of pages are never twice the same. docs.stripe.com carries a code
+ * sample that rotates on a timer, and across four snapshots of an untouched home
+ * page its two elements read "jenny.rosen@example.com", then "$ stripe balance
+ * retrieve", then "false", then "https://example.com/success". Two elements of
+ * sixty, changing with nobody touching anything, and `fingerprint` returns a
+ * different string for each. Everything downstream that asks "did that do
+ * anything" then answers yes: a click that navigated nowhere was never reported
+ * as inert, so the run clicked the same link again two steps later, and the lap
+ * warning never fired because no page was ever visited twice.
+ *
+ * Measured on that run, the overlap is a clean split with nothing near the middle.
+ * The untouched home page against itself: 0.93. The same page after typing into
+ * its search box: 0.87. A menu opening on stripe.com: 0.63 and 0.28. An actual
+ * navigation: 0.01 and 0.00. So the default sits in the gap rather than on a
+ * measurement, and both neighbours are far from it.
+ *
+ * Only the agent's own memory uses this. The loop blocker still wants two pages to
+ * be identical, because a four-step wizard whose pages share their navigation
+ * would resemble itself the whole way through, and charging that with going in
+ * circles is a false finding on a site that works. Being told "you already tried
+ * this" one step too eagerly costs a step; a false blocker costs the truth.
+ */
+export function resembles(a: Perception, b: Perception, threshold = 0.85): boolean {
+  if (a.url !== b.url) return false;
+  const A = Array.from(new Set(marks(a)));
+  const B = new Set(marks(b));
+  if (!A.length && !B.size) return a.title === b.title;
+  let shared = 0;
+  for (const m of A) if (B.has(m)) shared++;
+  return shared / (A.length + B.size - shared) >= threshold;
 }
 
 /** Render the perception as the compact numbered state the model sees. */

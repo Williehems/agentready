@@ -13,7 +13,6 @@ import {
   withOurEmail,
 } from "../lib/agent";
 import { ACTIONS } from "../lib/actions";
-import { fingerprint } from "../lib/perceive";
 import type { Perception } from "../lib/types";
 
 /**
@@ -458,43 +457,83 @@ describe("recall: what the model is told it has already done from here", () => {
     text: "Create an account or login to access this page",
     elements: [{ index: 1, role: "textbox", name: "Email", ref: "e9" }],
   };
-  const fresh = (): Memory => ({ history: [], inert: new Set(), seen: new Map() });
+  const fresh = (): Memory => ({ history: [], inert: new Set(), seen: [] });
 
   it("says nothing at all on a page the run has not stood on", () => {
     const m = fresh();
-    m.seen.set("some other page", ['click "API Keys"']);
+    m.seen.push({ page: login, moves: ['click "API Keys"'] });
     assert.equal(recall(m, docs), "");
   });
 
   it("names the turning already taken when the run comes back round", () => {
     const m = fresh();
-    m.seen.set(fingerprint(docs), ['click "API Keys"']);
+    m.seen.push({ page: docs, moves: ['click "API Keys"'] });
     const said = recall(m, docs);
-    assert.match(said, /YOU HAVE BEEN ON THIS EXACT PAGE BEFORE/);
+    assert.match(said, /YOU HAVE BEEN ON THIS PAGE BEFORE/);
     assert.match(said, /- click "API Keys"/);
     assert.match(said, /Choose something else\./);
   });
 
   it("keeps each page's turnings to itself", () => {
     const m = fresh();
-    m.seen.set(fingerprint(docs), ['click "API Keys"']);
-    m.seen.set(fingerprint(login), ['type "Email"']);
+    m.seen.push({ page: docs, moves: ['click "API Keys"'] });
+    m.seen.push({ page: login, moves: ['type "Email"'] });
     assert.ok(!recall(m, login).includes('click "API Keys"'));
     assert.match(recall(m, login), /- type "Email"/);
+  });
+
+  /**
+   * The carousel, from run 6 on docs.stripe.com. Four snapshots of a home page
+   * nobody had touched, and two of its sixty elements read "jenny.rosen@example.com",
+   * then "$ stripe balance retrieve", then "false", then "https://example.com/success".
+   * An exact key made every one of those a page never seen before, so this block
+   * printed on no site with a ticking element on it.
+   *
+   * Built at the real width, because the width is the whole of why it works: two
+   * marks of sixty is 0.94 of the page shared, and two of four is 0.33.
+   */
+  it("still recognises a page that changed a line of itself while nobody touched it", () => {
+    const wide = (sample: string): Perception => ({
+      ...docs,
+      elements: [
+        ...Array.from({ length: 58 }, (_, i) => ({
+          index: i + 1,
+          role: "link",
+          name: `Section ${i + 1}`,
+          ref: `e${i}`,
+        })),
+        { index: 59, role: "code", name: sample, ref: "e59" },
+        { index: 60, role: "button", name: "Copy", ref: "e60" },
+      ],
+    });
+    const m = fresh();
+    m.seen.push({ page: wide("jenny.rosen@example.com"), moves: ['click "API Keys"'] });
+    assert.match(recall(m, wide("$ stripe balance retrieve")), /- click "API Keys"/);
+  });
+
+  /**
+   * The other side of the same threshold, from the same run: dashboard.stripe.com/login
+   * shares 0.01 of its marks with the page that linked to it. A resemblance loose
+   * enough to call that a lap would tell the model it had been everywhere.
+   */
+  it("does not call a page it navigated to the page it left", () => {
+    const m = fresh();
+    m.seen.push({ page: docs, moves: ['click "API Keys"'] });
+    assert.equal(recall(m, login), "");
   });
 
   it("carries the other two blocks alongside it, since a lap is not the only thing worth knowing", () => {
     const m: Memory = {
       history: ['- click "API Keys" (ok)', '- click "Docs" (ok)'],
       inert: new Set(['click "Search"']),
-      seen: new Map([[fingerprint(docs), ['click "API Keys"']]]),
+      seen: [{ page: docs, moves: ['click "API Keys"'] }],
     };
     const said = recall(m, docs);
     assert.match(said, /WHAT YOU HAVE ALREADY TRIED:/);
     assert.match(said, /THESE LEFT THE PAGE EXACTLY AS IT WAS/);
     // In that order, so the most specific thing is the last thing read.
     assert.ok(said.indexOf("ALREADY TRIED") < said.indexOf("EXACTLY AS IT WAS"));
-    assert.ok(said.indexOf("EXACTLY AS IT WAS") < said.indexOf("EXACT PAGE BEFORE"));
+    assert.ok(said.indexOf("EXACTLY AS IT WAS") < said.indexOf("THIS PAGE BEFORE"));
   });
 
   it("shows only the last five moves but every dead end, which is the point of keeping them apart", () => {
