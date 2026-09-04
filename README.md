@@ -125,9 +125,16 @@ Landing page at `/`, the audit console at `/audit`, the board at `/runs`.
 npm run typecheck && npm test
 ```
 
-389 tests, no network, no keys needed. They cover `lib/` only: the grader, the
-perception reduction, the agent loop's decision handling, the Solari error
-mapping. The API routes and the components are not tested yet.
+404 tests, no network, no keys needed. They cover the grader, the perception
+reduction, the agent loop's decision handling, the Solari error mapping, the
+spending gate, and every refusal the three API routes can give: a body that is not
+JSON, a target that is not ours to touch, an instance with no keys, a stop that
+arrived too late, a malformed session id. The suite was run with `globalThis.fetch`
+replaced by a throw to prove the no network claim rather than assert it.
+
+Two things are deliberately not covered. A successful run, because it opens a
+metered browser on the first line and a test that costs money every time is a test
+nobody runs. And the components, which have no tests at all yet.
 
 Without keys the board and the three shipped example runs still render, and
 `/audit` returns a plain sentence saying which key is missing rather than
