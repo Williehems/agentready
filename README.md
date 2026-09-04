@@ -145,6 +145,27 @@ a stalled site look identical in a replay and the difference is whose fault it i
 
 Cash cost of every test in this repository: nothing beyond the Solari plan.
 
+### The audit endpoint is a spending endpoint
+
+`POST /api/audit` opens a metered browser and spends model tokens, so on a public
+URL it is a form that spends someone's balance on a stranger's request. `lib/runs.ts`
+holds the gate, and it refuses in three ways, each with a plain sentence rather than
+a bare 429:
+
+- **One at a time.** A second request while a run is in flight is refused, because
+  the deployment is one process driving one browser. This is not a new limitation,
+  it is the existing one said out loud with a number.
+- **Sixty seconds per visitor,** keyed on the first hop of `x-forwarded-for`. That
+  header is trusted to decide how long one visitor waits and nothing else. Behind no
+  proxy there is no header and everyone is one visitor, which is the right answer on
+  a laptop.
+- **Ten runs a day,** reset on the UTC date. Ten because a full ten step run costs
+  about 20,000 prompt tokens and the free allowance is 200,000. Past that the model
+  starts refusing mid-run, and the letter it produces then is a fact about our
+  billing rather than about the site, which is the one kind of wrong answer this
+  product must never give. Raise it with `AUDIT_DAILY_CAP` once someone else is
+  paying for the tokens.
+
 ## What has been measured
 
 36 graded runs across 11 hosts, 205 page perceptions. 25 of them ran to their own

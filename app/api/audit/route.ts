@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { runAudit } from "@/lib/agent";
 import { ACTIONS } from "@/lib/actions";
-import { beginRun, endRun } from "@/lib/runs";
+import { beginRun, chargeStart, endRun, mayStart } from "@/lib/runs";
 import { newRunId, normaliseTarget } from "@/lib/url";
 import type { RunEvent } from "@/lib/types";
 
@@ -44,11 +44,23 @@ export async function POST(req: Request) {
   const runId = newRunId();
   const encoder = new TextEncoder();
 
+  /**
+   * Who is asking, for the cooldown only. The first hop in x-forwarded-for is the
+   * client as the platform saw it, and it is trusted no further than that: it
+   * decides how long one visitor waits, never what they are allowed to see. Behind
+   * no proxy there is no header, and then everyone is one visitor, which is the
+   * right answer for a laptop running this locally.
+   */
+  const visitor = (req.headers.get("x-forwarded-for") ?? "local").split(",")[0].trim();
+  const gate = mayStart(visitor);
+  if (!gate.ok) return Response.json({ error: gate.why }, { status: 429 });
+
   // One handle, pulled three ways, because all three mean the same thing and the
   // cloud browser is billed until it is released: the stop button posts to
   // /api/audit/stop, a tab that goes away aborts the request, and a client that
   // stops reading cancels the stream.
   const runner = beginRun(runId);
+  chargeStart(visitor);
   req.signal.addEventListener("abort", () => runner.abort());
 
   const stream = new ReadableStream<Uint8Array>({
