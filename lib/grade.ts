@@ -687,6 +687,7 @@ export function grade(t: Transcript): Verdict {
       inconclusive,
       Boolean(cutShort),
       t.declaredDone && !finished,
+      proof,
     ),
     ...(inconclusive ? { inconclusive: true as const } : {}),
     ...(cutShort ? { cutShort } : {}),
@@ -723,6 +724,7 @@ function summarise(
   inconclusive = false,
   cutShort = false,
   unsupported = false,
+  proof?: string,
 ): string {
   const task = actionLabel.toLowerCase();
 
@@ -748,7 +750,17 @@ function summarise(
     return `No grade: our side stopped this run before it could finish (${t.abandoned}). ${got}, and whether it could have completed "${task}" was never put to the test.`;
   }
   if (milestones.includes("completed-action")) {
+    /**
+     * The A says what it is standing on. endStateSeen already had to name the
+     * thing it saw, in the page's own words, before those 40 points were paid, and
+     * until now that sentence was computed and thrown away: a reader was told an
+     * agent finished and given nothing to check it against. A refusal has always
+     * said what was missing (END_STATE_WANTED), so a success saying what was there
+     * is the same courtesy pointed the other way.
+     */
     return `An AI agent completed "${task}" in ${count(t.stepCount, "step")}.${
+      proof ? ` What proves it: ${proof}.` : ""
+    }${
       blockers.length ? ` It worked, but it had to get past ${count(blockers.length, "obstacle")} on the way.` : ""
     }`;
   }

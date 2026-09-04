@@ -920,6 +920,28 @@ describe("grade: a claim of having finished", () => {
     assert.match(endStateSeen(t)!, /a code example \("await fetch\("https:\/\/api\.stripe\.com/);
   });
 
+  it("says what the finish is standing on, in the page's own words", () => {
+    // A refusal has always said what was missing. A success said only that it
+    // happened, and the sentence naming what was seen was computed and discarded.
+    const t = transcript({
+      action: "integrate",
+      perceptions: [
+        page({
+          url: "https://docs.stripe.com/api/authentication",
+          title: "Authentication",
+          text: `${PROSE}\ncurl https://api.stripe.com/v1/charges \\\nAuthenticate with your secret key.`,
+        }),
+      ],
+      declaredDone: true,
+    });
+    const v = grade(t);
+    assert.equal(v.grade, "A");
+    assert.match(
+      v.summary,
+      /What proves it: a code example \("curl https:\/\/api\.stripe\.com\/v1\/charges/,
+    );
+  });
+
   it("takes the payment step as the end of a purchase, by its fields or by its URL", () => {
     const fields = transcript({
       action: "purchase",
