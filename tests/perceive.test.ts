@@ -222,6 +222,122 @@ describe("parseAriaSnapshot: controls that cannot be operated", () => {
   });
 });
 
+/** `- button "Thing 0" [ref=th0]` and so on, indented to sit under a container. */
+const many = (role: string, label: string, n: number, indent: number) =>
+  Array.from(
+    { length: n },
+    (_, i) => `${" ".repeat(indent)}- ${role} "${label} ${i}" [ref=${label.slice(0, 2)}${i}]`,
+  ).join("\n");
+
+/**
+ * The docs.stripe.com/keys shape: furniture first, body last, sidebar outside the
+ * article and a strip of page apparatus inside it.
+ */
+const DOCS = [
+  `- banner [ref=b0]:`,
+  `  - link "Skip to content" [ref=b1]`,
+  `  - button "Search /" [ref=b2]`,
+  `  - tablist [ref=b3]:`,
+  many("tab", "Product", 6, 4),
+  `- generic [ref=g0]:`,
+  `  - list [ref=g1]:`,
+  many("link", "Sidebar", 30, 4),
+  `  - article [ref=a0]:`,
+  `    - toolbar "Actions" [ref=a1]:`,
+  many("button", "Apparatus", 4, 6),
+  many("link", "Content", 50, 4),
+].join("\n");
+
+/**
+ * The page's own furniture against the thing the furniture points at.
+ *
+ * Measured on the real docs.stripe.com/keys snapshot, which is where every number
+ * here comes from: 1145 nodes, 184 controls, an `article` holding 97 of them, no
+ * `main`, no `banner`, and a 32-entry sidebar sitting outside the article as plain
+ * list items under `generic`. The furniture comes first in document order, so the
+ * sixty slots went 57 to the furniture and 3 to the article. The agent then spent
+ * four of that run's ten steps going back to a page whose body it had barely seen.
+ *
+ * The fixture keeps that shape and inflates the counts past the budget, because a
+ * page that fits in sixty slots is a page where none of this does anything.
+ */
+describe("parseAriaSnapshot: furniture and content", () => {
+  const els = parseAriaSnapshot(DOCS);
+  const named = (prefix: string) => els.filter((e) => e.name.startsWith(prefix));
+
+  it("spends the budget on the body and holds the furniture to eighteen", () => {
+    assert.equal(els.length, 60);
+    assert.equal(named("Content").length, 42);
+    assert.equal(els.length - named("Content").length, 18);
+  });
+
+  it("still shows the furniture first, so the page still reads like itself", () => {
+    // Document order is kept. Only the amount changes, and the body starts as soon
+    // as the furniture has had its eighteen.
+    assert.equal(named("Content")[0].index, 19);
+    assert.equal(els[0].name, "Skip to content");
+  });
+
+  it("counts a toolbar inside the article as furniture, because that is what it is", () => {
+    // Stripe's `toolbar "Actions"` holds "Ask about this page", "Copy for LLM",
+    // "View as Markdown" and "Install tools", four slots of apparatus in the middle
+    // of the content. Read as content they would come before the article's own
+    // links and take the first four of its slots.
+    assert.equal(named("Apparatus").length, 0);
+    assert.equal(named("Content").length, 42, "and the body keeps the whole 42");
+  });
+
+  it("leaves a page whose body fits alone", () => {
+    // plausible.io/register, measured: 29 nodes, 7 controls, all inside `main`.
+    // Nothing is competing for anything, so nothing should be trimmed.
+    const page = [`- main [ref=m0]:`, many("button", "Field", 7, 2)].join("\n");
+    assert.equal(parseAriaSnapshot(page).length, 7);
+  });
+
+  it("trims real furniture even on a page that never says where its content is", () => {
+    // No `main` and no `article`, so the anchor rule has nothing to work with and
+    // only the landmarks themselves are furniture. That is the honest reading of a
+    // page that did not say: everything outside the nav is its content.
+    const page = [`- navigation [ref=n0]:`, many("link", "Menu", 30, 2), many("button", "Body", 40, 0)].join(
+      "\n",
+    );
+    const out = parseAriaSnapshot(page);
+    assert.equal(out.filter((e) => e.name.startsWith("Body")).length, 40);
+    assert.equal(out.filter((e) => e.name.startsWith("Menu")).length, 20);
+  });
+
+  it("hands the reserved slots back when the body turns out not to want them", () => {
+    // Fifty repeats of one link collapse to one element, so the room reserved for
+    // the body goes unspent. Leaving it empty would describe less of the page than
+    // the budget allows and buy nothing for it.
+    const page = [
+      `- navigation [ref=n0]:`,
+      many("link", "Menu", 40, 2),
+      `- article [ref=a0]:`,
+      Array.from({ length: 50 }, (_, i) => `  - link "Read more" [ref=r${i}]`).join("\n"),
+    ].join("\n");
+    const out = parseAriaSnapshot(page);
+    assert.equal(out.filter((e) => e.name === "Read more").length, 1);
+    assert.equal(out.filter((e) => e.name.startsWith("Menu")).length, 40);
+  });
+
+  it("treats everything in an open modal as content, furniture rule and all", () => {
+    // Behind an open modal the page has already been narrowed to the modal, and a
+    // long form inside one sits outside the page's `main`. Classifying it against
+    // the whole page would hold most of that form back as furniture and leave the
+    // agent unable to fill in the thing it is trapped behind.
+    const page = [
+      `- main [ref=m0]:`,
+      many("link", "Article", 50, 2),
+      `- dialog "Checkout" [ref=d0]:`,
+      many("textbox", "Field", 25, 2),
+    ].join("\n");
+    const out = parseAriaSnapshot(page, true);
+    assert.equal(out.length, 25);
+    assert.equal(out.filter((e) => e.name.startsWith("Field")).length, 25);
+  });
+});
+
 describe("parseAriaSnapshot: dropdowns", () => {
   const els = parseAriaSnapshot(BOOKING_STEP);
 

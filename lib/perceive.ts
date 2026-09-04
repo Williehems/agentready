@@ -199,6 +199,51 @@ export function modalIsOpen(): boolean {
 const MAX_ELEMENTS = 60;
 const MAX_TEXT = 2800;
 /**
+ * How many of the sixty slots the page's furniture may hold when its own content
+ * wants them all.
+ *
+ * Measured on docs.stripe.com/keys, which is where this number comes from. The
+ * snapshot has 1145 nodes and 184 controls. Its `article` holds 97 of them; the
+ * rest are two skip links, a search, an assistant, sign-in and create-account, six
+ * product tabs, a 32-entry sidebar, three locale pickers and three breadcrumbs.
+ * In document order the furniture comes first, so the sixty slots went 57 to the
+ * furniture and 3 to the article, and the agent read a page whose body it had
+ * barely seen. Four of that run's ten steps were spent going back to it.
+ *
+ * Eighteen leaves the global search, the account links and the top-level tabs,
+ * which is the least a site's own map can be and still be a map. The content side
+ * is not given a floor in return: a page whose body really is four links should
+ * not have the rest of its list held empty for it.
+ */
+const MIN_CHROME = 18;
+/**
+ * Containers whose interiors are furniture wherever they sit.
+ *
+ * Wherever, because Stripe's `toolbar "Actions"` is inside the article and holds
+ * "Ask about this page", "Copy for LLM", "View as Markdown" and "Install tools":
+ * four slots of page apparatus in the middle of the content. `search` is not here,
+ * a searchbox being a control an agent may well want, and neither is `form`.
+ */
+const CHROME = new Set([
+  "navigation",
+  "banner",
+  "contentinfo",
+  "complementary",
+  "tablist",
+  "toolbar",
+]);
+/**
+ * What a page calls its own content, best first.
+ *
+ * `main` when the page has one, and `article` when it does not: verified on two
+ * real snapshots rather than assumed, because the assumption was wrong.
+ * plausible.io/register is rooted at `main` and has no article;
+ * docs.stripe.com/keys has no `main`, no `banner` and no `complementary`, and its
+ * body is an `article` with the sidebar outside it as plain list items under
+ * `generic`. A rule written for landmarks alone would have done nothing on Stripe.
+ */
+const CONTENT_ANCHORS = ["main", "article"];
+/**
  * How many controls that cannot be operated are worth describing.
  *
  * A greyed-out submit is the answer to why a form is stuck, so a few belong in
@@ -335,6 +380,37 @@ function reachable(nodes: Node[]): Node[] {
 }
 
 /**
+ * Which of these nodes are the page's furniture rather than its content, one flag
+ * per node in the same order.
+ *
+ * Two rules, and a node needs to fail only one of them. It is furniture if any
+ * container above it is furniture, and it is furniture if the page named a content
+ * container somewhere and this node is not inside it. The second rule is what
+ * demotes a sidebar that is only `generic` and `list`, which no landmark rule can
+ * reach: on docs.stripe.com that sidebar is 32 of the 60 slots.
+ *
+ * A page that names no content container has no second rule to fail, so all of it
+ * is content bar the furniture proper. That is the honest reading of a page that
+ * did not say, and it is also every page this parser handled before zones existed.
+ *
+ * Ancestors are tracked as a stack of open containers, popped by indent, so the
+ * whole classification is one pass.
+ */
+function furniture(nodes: Node[]): boolean[] {
+  const anchor = CONTENT_ANCHORS.find((role) => nodes.some((n) => n.role === role));
+  const flags: boolean[] = [];
+  const open: Node[] = [];
+  for (const n of nodes) {
+    while (open.length && open[open.length - 1].indent >= n.indent) open.pop();
+    const belowChrome = open.some((a) => CHROME.has(a.role));
+    const insideContent = !anchor || open.some((a) => a.role === anchor);
+    flags.push(belowChrome || !insideContent);
+    open.push(n);
+  }
+  return flags;
+}
+
+/**
  * Turn one aria snapshot into the numbered list the model addresses by index.
  *
  * `modalOpen` comes from the DOM, never from the snapshot, and defaults to false:
@@ -441,10 +517,29 @@ export function parseAriaSnapshot(snapshot: string, modalOpen = false): Perceive
   const live = visible.filter((n) => INTERACTIVE.has(n.role) && !n.disabled).length;
   let deadLeft = Math.min(MAX_DISABLED, Math.max(0, MAX_ELEMENTS - live));
 
-  for (let i = 0; i < visible.length && out.length < MAX_ELEMENTS; i++) {
+  /**
+   * How many slots the page's own furniture may take, so a site's map can never
+   * crowd out the thing the map points at.
+   *
+   * The content side asks for what it wants and the furniture gets the rest, down
+   * to MIN_CHROME and no further. `wanted` counts nodes rather than the elements
+   * they collapse to, so it overestimates; the top-up pass below hands back
+   * whatever that overestimate reserved and nobody used.
+   *
+   * Computed over `visible`, which matters: behind an open modal the page has
+   * already been narrowed to the modal, so there is no furniture there to hold
+   * back and every control in it is content.
+   */
+  const chrome = furniture(visible);
+  const wanted = visible.filter(
+    (n, i) => !chrome[i] && INTERACTIVE.has(n.role) && !n.disabled,
+  ).length;
+  let chromeLeft = MAX_ELEMENTS - Math.min(wanted, MAX_ELEMENTS - MIN_CHROME);
+
+  /** Describe one node, or report that its slot went unspent. */
+  const push = (i: number): boolean => {
     const n = visible[i];
-    if (!INTERACTIVE.has(n.role)) continue;
-    if (n.disabled && deadLeft <= 0) continue;
+    if (n.disabled && deadLeft <= 0) return false;
 
     const name = n.name || inferName(visible, i);
     if (COLLAPSIBLE.has(n.role)) {
@@ -452,7 +547,7 @@ export function parseAriaSnapshot(snapshot: string, modalOpen = false): Perceive
       // are two different facts about the page, and a dead one arriving first
       // must not swallow the one that works.
       const key = `${n.role}::${name.toLowerCase()}::${n.href ?? ""}::${n.disabled}`;
-      if (seen.has(key)) continue;
+      if (seen.has(key)) return false;
       seen.add(key);
     }
 
@@ -466,7 +561,23 @@ export function parseAriaSnapshot(snapshot: string, modalOpen = false): Perceive
       deadLeft--;
     }
     out.push(el);
+    return true;
+  };
+
+  const held: number[] = [];
+  for (let i = 0; i < visible.length && out.length < MAX_ELEMENTS; i++) {
+    if (!INTERACTIVE.has(visible[i].role)) continue;
+    if (chrome[i] && chromeLeft <= 0) {
+      held.push(i);
+      continue;
+    }
+    if (push(i) && chrome[i]) chromeLeft--;
   }
+
+  // Furniture held back above goes back in if the content did not want the room
+  // after all. Repeated links collapse into one element, so the reserve can go
+  // unspent, and describing less of the page than the budget allows buys nothing.
+  for (let i = 0; i < held.length && out.length < MAX_ELEMENTS; i++) push(held[i]);
 
   return out;
 }
