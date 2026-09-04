@@ -3,7 +3,7 @@ import path from "node:path";
 import { z } from "zod";
 import { ACTIONS, type ActionSpec, handoffLabel, isDeadEndHref } from "./actions";
 import { Deadline, TimeoutError, withTimeout } from "./deadline";
-import { groqJson, type ChatOptions } from "./groq";
+import { type ChatOptions, dailyHoldMs, groqJson } from "./groq";
 import { type AgentPage, looksPriced, perceive, renderState, resembles } from "./perceive";
 import { grade, type Transcript } from "./grade";
 import { closeClient, launchBrowser, releaseSession } from "./solari";
@@ -1025,6 +1025,20 @@ export async function runAudit(opts: RunOptions): Promise<void> {
       await stopHere();
       return;
     }
+
+    // Asked before the browser, because a run that cannot think is not worth a
+    // session. Groq's day bucket is invisible in its response headers, so the
+    // only way to know it is empty is that it refused us earlier, and it stays
+    // empty for many minutes: measured, 200000 tokens a day against roughly 2400
+    // per decision, refilling near 139 a minute. Run 8 spent a session to take
+    // three steps and stop, which is the waste this prevents.
+    const dry = dailyHoldMs();
+    if (dry > 0) {
+      abandoned = `our Groq free tier is spent for the day and refills in about ${Math.max(1, Math.round(dry / 60_000))} minutes, so this run was not started`;
+      await emit({ type: "status", message: `Not starting: ${abandoned}`, at: now() });
+      return;
+    }
+
     await emit({ type: "status", message: "Acquiring a stealth browser", at: now() });
     launched = await launchBrowser({ stealth: true });
     // The session id goes out now rather than only with the verdict, so a run that

@@ -163,6 +163,97 @@ let bucket: Allowance | undefined;
 const refillPerMs = (limit: number) => limit / 60_000;
 
 /**
+ * The allowance the response headers do not mention.
+ *
+ * Measured on this key, and the reason run 8 died at step 3 of 14: the refusal
+ * was `on tokens per day (TPD): Limit 200000, Used 199919, Requested 2394.
+ * Please try again in 16m39.216s`, while the very same response's headers read
+ * limit-tokens 8000 remaining-tokens 5668 and limit-requests 1000 remaining
+ * 997. Every header said there was room. The bucket that was empty is named
+ * nowhere but in the prose of the refusal.
+ *
+ * So it is read from there, and remembered, because the consequence is not a
+ * pause but a day: at 200000 a day this refills near 139 tokens a minute, and
+ * one decision on a docs page costs about 2400 of them. A run that walks into
+ * this spends a browser session to think one thought and then stops, which is
+ * why it is worth knowing before the browser is acquired rather than after.
+ */
+export interface DailyAllowance {
+  /** Which allowance ran out, in Groq's own words: "tokens per day (TPD)". */
+  bucket: string;
+  limit: number;
+  used: number;
+  /** What the refused call was asking for, which sets how long a wait helps. */
+  requested: number;
+  /** How long Groq said to wait, which is the only figure that reflects refill. */
+  waitMs: number;
+  at: number;
+}
+
+let daily: DailyAllowance | undefined;
+
+/**
+ * The day bucket named in a 429 body, or nothing when the refusal was about a
+ * minute. Only day buckets are kept: a minute is a pause the governor already
+ * handles from the headers, and treating one as a day would refuse runs that
+ * would have gone through seconds later.
+ */
+export function parseDailyRefusal(body: string, now = Date.now()): DailyAllowance | undefined {
+  const m =
+    /on ((?:tokens|requests) per day \((?:TPD|RPD)\)): Limit (\d+), Used (\d+), Requested (\d+)/i.exec(
+      body,
+    );
+  if (!m) return undefined;
+  // Up to the sentence end rather than the first full stop, because the duration
+  // has one inside it: "16m39.216s." would otherwise be read as sixteen minutes
+  // flat, and the compound shape is the one a day bucket always answers with.
+  const waitMs = durationMs(/try again in (.+?)(?:\.\s|\.$|$)/i.exec(body)?.[1] ?? null);
+  return {
+    bucket: m[1],
+    limit: Number(m[2]),
+    used: Number(m[3]),
+    requested: Number(m[4]),
+    waitMs: waitMs ?? 0,
+    at: now,
+  };
+}
+
+/**
+ * What is known about the day's allowance, or nothing if it has never refused us.
+ *
+ * Silence is not the same as room: the day bucket is invisible until it is empty,
+ * so a caller must read this as "no reason to think otherwise" rather than as a
+ * balance. That is the honest shape of the information Groq gives.
+ */
+export function dailyState(): DailyAllowance | undefined {
+  return daily;
+}
+
+/** For tests, and for a process that wants to stop trusting a stale refusal. */
+export function forgetDailyRefusal(): void {
+  daily = undefined;
+}
+
+/**
+ * How long until the day's allowance covers one more call of the usual size, or
+ * 0 to go now.
+ *
+ * Groq's own wait is the starting point rather than arithmetic on Used, because
+ * only Groq knows how its day bucket refills; the elapsed time since is
+ * subtracted because a refusal ten minutes old has been refilling for ten
+ * minutes. Nothing is added for a larger call than the one refused: a wait that
+ * turns out short costs one 429, and a wait that is too long costs an audit
+ * nobody ran.
+ *
+ * Takes the state rather than only reading the module one, so the arithmetic can
+ * be checked without a live refusal to produce it.
+ */
+export function dailyHoldMs(state: DailyAllowance | undefined = daily, now = Date.now()): number {
+  if (!state) return 0;
+  return Math.max(0, state.waitMs - (now - state.at));
+}
+
+/**
  * How long a call of this size must wait for the allowance to cover it, or 0 to
  * go now.
  *
@@ -302,7 +393,21 @@ export async function groqChat(
         const text = await res.text();
         readBucket(res.headers);
         const waitMs = retryAfterMs(text, res.headers);
+        // Remembered before any decision about this call, because the fact
+        // outlives the call: a day bucket that is empty now is empty for the next
+        // run too, and that run should not spend a browser session finding out.
+        const day = parseDailyRefusal(text);
+        if (day) daily = { ...day, waitMs: waitMs ?? day.waitMs };
         const spare = timeoutMs - (Date.now() - started);
+        if (daily && day) {
+          // No retry and no attempt counting. The wait here is measured in
+          // minutes at best, so the only useful thing left to do is say which
+          // allowance ran out, in Groq's own words, and how long it wants.
+          throw new RateLimitedError(
+            daily.waitMs,
+            `our free tier is out of ${daily.bucket}: ${daily.used} of ${daily.limit} used, and this call asked for ${daily.requested} more. It refills in about ${Math.round(daily.waitMs / 60_000)} minutes`,
+          );
+        }
         if (rateAttempt >= RETRY_LIMIT) {
           throw new RateLimitedError(waitMs, `it refused ${rateAttempt} attempts in a row`);
         }

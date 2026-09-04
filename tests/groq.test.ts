@@ -1,6 +1,16 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { durationMs, holdMs, reserveTokens, transportFault, type Allowance } from "../lib/groq";
+import {
+  type Allowance,
+  dailyHoldMs,
+  dailyState,
+  durationMs,
+  forgetDailyRefusal,
+  holdMs,
+  parseDailyRefusal,
+  reserveTokens,
+  transportFault,
+} from "../lib/groq";
 
 /**
  * Node's fetch throws `TypeError: fetch failed` for every network-layer fault and
@@ -140,3 +150,81 @@ describe("reserveTokens: what one call costs before it is made", () => {
     assert.equal(reserveTokens([msg("x".repeat(400))], 20), 612);
   });
 });
+
+/**
+ * The allowance that is nowhere in the headers.
+ *
+ * Captured from this key on 2026-09-04, verbatim, which is the only reason any of
+ * this is shaped the way it is: the same response that carried this body had
+ * headers reading limit-tokens 8000, remaining-tokens 5668, limit-requests 1000,
+ * remaining-requests 997. Every visible bucket had room. The empty one is named
+ * only in the prose.
+ */
+const TPD_REFUSAL =
+  "Rate limit reached for model `openai/gpt-oss-120b` in organization `org_x` service tier `on_demand` on tokens per day (TPD): Limit 200000, Used 199919, Requested 2394. Please try again in 16m39.216s. Need more tokens? Upgrade to Dev Tier today at https://console.groq.com/settings/billing";
+
+/** A minute refusal, for contrast: this one is a pause, not a day. */
+const TPM_REFUSAL =
+  "Rate limit reached for model `openai/gpt-oss-120b` in organization `org_x` on tokens per minute (TPM): Limit 8000, Used 7492, Requested 2394. Please try again in 12.239999999s.";
+
+describe("parseDailyRefusal: the bucket Groq only mentions in prose", () => {
+  it("reads the numbers out of the refusal it actually sent", () => {
+    const d = parseDailyRefusal(TPD_REFUSAL, 1000);
+    assert.equal(d?.bucket, "tokens per day (TPD)");
+    assert.equal(d?.limit, 200_000);
+    assert.equal(d?.used, 199_919);
+    assert.equal(d?.requested, 2394);
+    assert.equal(d?.at, 1000);
+  });
+
+  it("reads the compound duration whole, not up to the first full stop", () => {
+    // "16m39.216s." has a full stop inside it. Stopping at that one reads sixteen
+    // minutes flat and throws away 39 seconds of the wait.
+    assert.equal(parseDailyRefusal(TPD_REFUSAL)?.waitMs, 999_216);
+  });
+
+  it("says nothing about a refusal that was only about this minute", () => {
+    // A minute is a pause the header governor already handles. Remembering it as a
+    // day would refuse runs that would have gone through twelve seconds later.
+    assert.equal(parseDailyRefusal(TPM_REFUSAL), undefined);
+  });
+
+  it("recognises the request-per-day bucket too", () => {
+    const d = parseDailyRefusal(
+      "on requests per day (RPD): Limit 1000, Used 1000, Requested 1. Please try again in 1m26.4s.",
+    );
+    assert.equal(d?.bucket, "requests per day (RPD)");
+    assert.equal(d?.waitMs, 86_400);
+  });
+
+  it("is not fooled by a body that is not a rate limit at all", () => {
+    assert.equal(parseDailyRefusal('{"error":{"message":"model_not_found"}}'), undefined);
+  });
+});
+
+describe("dailyHoldMs: how long the day bucket stays empty", () => {
+  const spent = parseDailyRefusal(TPD_REFUSAL, 10_000);
+  if (!spent) throw new Error("the refusal above must parse for these to mean anything");
+
+  it("asks for the whole wait the moment it is refused", () => {
+    assert.equal(dailyHoldMs(spent, 10_000), 999_216);
+  });
+
+  it("counts the refill that happened while nobody was asking", () => {
+    // A refusal ten minutes old has been refilling for ten minutes. Reading it as
+    // a fresh wait would hold every run for a bucket that is already half back.
+    assert.equal(dailyHoldMs(spent, 10_000 + 600_000), 399_216);
+  });
+
+  it("clears once the wait is behind it, and never goes negative", () => {
+    assert.equal(dailyHoldMs(spent, 10_000 + 999_216), 0);
+    assert.equal(dailyHoldMs(spent, 10_000 + 5_000_000), 0);
+  });
+
+  it("asks for nothing when Groq has never refused us", () => {
+    forgetDailyRefusal();
+    assert.equal(dailyState(), undefined, "silence is not a balance, but it is not a refusal either");
+    assert.equal(dailyHoldMs(), 0);
+  });
+});
+
