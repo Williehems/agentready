@@ -272,6 +272,22 @@ interface RunOptions {
 export const STOPPED_BY_YOU = "you stopped the run";
 
 /**
+ * Take back one recorded failure, the most recent one that matches.
+ *
+ * Exactly one, and matched by what it says rather than by where it sits. Two
+ * clicks that time out on the same site produce the same sentence word for word,
+ * and evidence that the second one landed says nothing about the first: removing
+ * both would clear a real finding, and grading counts these, so the count is the
+ * thing that has to stay honest.
+ */
+export function withdrawFailure(failures: string[], charge: string): boolean {
+  const at = failures.lastIndexOf(charge);
+  if (at < 0) return false;
+  failures.splice(at, 1);
+  return true;
+}
+
+/**
  * What a decision cost, and any pause the free-tier governor imposed to afford it.
  *
  * Passed down rather than logged inside the client, because the run is the thing
@@ -692,8 +708,29 @@ export async function runAudit(opts: RunOptions): Promise<void> {
    * something. Only clicks and back are tracked: typing is meant to leave the
    * page where it is, and a scroll moves the viewport without moving anything
    * this can see.
+   *
+   * `charge` is the failure this step recorded, if it recorded one. It is charged
+   * now and withdrawn on evidence rather than held back until the evidence
+   * arrives, so a run that ends before any arrives reports exactly what it always
+   * did: a click nobody can show landed is a click that did not land.
    */
-  let pending: { key: string; before: string; line: number } | undefined;
+  let pending: { key: string; before: string; line: number; charge?: string } | undefined;
+
+  /**
+   * Withdraw a failure from a click that turned out to have worked.
+   *
+   * Playwright's ten-second click timeout is not the last word. A link that opens
+   * a tab, or one whose click visibly moved the page, did accept the click, and
+   * two of those are all it takes to charge a site with form-stall for controls
+   * that work. The history line is corrected too: a model told its click failed
+   * is a model that clicks the same thing again.
+   */
+  const landed = (proof: string) => {
+    if (!pending?.charge) return;
+    withdrawFailure(failures, pending.charge);
+    memory.history[pending.line] = `- ${pending.key} (ok, ${proof})`;
+    pending = { ...pending, charge: undefined };
+  };
   let declaredDone = false;
   let gaveUp = false;
   let stepCount = 0;
@@ -799,10 +836,16 @@ export async function runAudit(opts: RunOptions): Promise<void> {
   /**
    * Report any tab that has appeared since the last look, and say whether one of
    * them is somewhere an agent cannot follow.
+   *
+   * The count matters as much as the destination. A click that opens a tab landed,
+   * whatever the click promise went on to say about it, and that is the only proof
+   * available for a click whose own timeout fired.
    */
-  const reportTabs = async (): Promise<string | undefined> => {
+  const reportTabs = async (): Promise<{ opened: number; deadEnd?: string }> => {
     let deadEnd: string | undefined;
+    let opened = 0;
     for (const at of await sweepTabs()) {
+      opened++;
       await emit({
         type: "status",
         message: `The site opened ${handoffLabel(at)} in a tab of its own: ${at.slice(0, 120)}`,
@@ -810,7 +853,7 @@ export async function runAudit(opts: RunOptions): Promise<void> {
       });
       deadEnd ??= isDeadEndHref(at) ? at : undefined;
     }
-    return deadEnd;
+    return { opened, deadEnd };
   };
 
   try {
@@ -883,8 +926,15 @@ export async function runAudit(opts: RunOptions): Promise<void> {
       // and the answer goes back into the prompt rather than into the verdict.
       if (pending) {
         if (fingerprint(p) === pending.before) {
-          memory.inert.add(pending.key);
-          memory.history[pending.line] = `- ${pending.key} (ok, but nothing on the page changed)`;
+          // Nothing moved. A click that also reported a failure is left charged:
+          // it did nothing and said so, which is one finding, not two, and the
+          // FAILED line already tells the model not to choose it again.
+          if (!pending.charge) {
+            memory.inert.add(pending.key);
+            memory.history[pending.line] = `- ${pending.key} (ok, but nothing on the page changed)`;
+          }
+        } else {
+          landed("and the page moved");
         }
         pending = undefined;
       }
@@ -986,11 +1036,17 @@ export async function runAudit(opts: RunOptions): Promise<void> {
       stalls = wedged ? stalls + 1 : 0;
       const move = `${d.action}${el ? ` "${el.name}"` : ""}`;
       memory.history.push(`- ${move}${error ? ` FAILED: ${error}` : " (ok)"}`);
-      // Left for the next perception to judge. A click that failed is already
-      // named as a failure, and saying it also changed nothing would charge the
-      // same step twice for one thing that went wrong.
-      if (!error && (d.action === "click" || d.action === "back")) {
-        pending = { key: move, before: fingerprint(p), line: memory.history.length - 1 };
+      // Left for the next perception to judge: whether it did nothing, and whether
+      // a click that reported a failure in fact landed. Our own ceiling firing is
+      // never the site's to answer for, so a wedged step carries no charge to
+      // withdraw.
+      if (d.action === "click" || d.action === "back") {
+        pending = {
+          key: move,
+          before: fingerprint(p),
+          line: memory.history.length - 1,
+          charge: error && !wedged ? error : undefined,
+        };
       }
 
       await emit({
@@ -1010,7 +1066,13 @@ export async function runAudit(opts: RunOptions): Promise<void> {
 
       // Read after the step is reported, so the note about where a click sent the
       // visitor follows the click rather than preceding it.
-      const handedOff = await reportTabs();
+      const { opened: newTabs, deadEnd: handedOff } = await reportTabs();
+
+      // A click that opened a tab landed, whatever its own promise said about it.
+      // Measured on docs.stripe.com: the click on "API keys" timed out at ten
+      // seconds and the dashboard opened in a tab of its own, and the site was
+      // charged form-stall for a link that works.
+      if (newTabs > 0) landed("it opened a tab of its own");
 
       // The answer, and there is nothing after it. Measured on the run that proved
       // this finding: the submit opened WhatsApp, the first tab fell back to the

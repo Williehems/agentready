@@ -1,7 +1,50 @@
 import assert from "node:assert/strict";
 import { describe, it, mock } from "node:test";
-import { act, frontPage, personaEmail, priceOnFrontPage, usable, withOurEmail } from "../lib/agent";
+import {
+  act,
+  frontPage,
+  personaEmail,
+  priceOnFrontPage,
+  usable,
+  withdrawFailure,
+  withOurEmail,
+} from "../lib/agent";
 import type { Perception } from "../lib/types";
+
+/**
+ * Two failures are all it takes to charge a site with form-stall, so what counts
+ * as a failure is worth being exact about. Playwright's click timeout is not the
+ * last word: measured on docs.stripe.com, the click on "API keys" timed out at
+ * ten seconds and the dashboard opened in a tab of its own, and the site was
+ * charged for a link that works.
+ */
+describe("withdrawFailure: taking back a charge the evidence does not support", () => {
+  it("removes the failure it names", () => {
+    const failures = ['link "API keys" did not accept a click within 10s'];
+    assert.equal(withdrawFailure(failures, failures[0]), true);
+    assert.deepEqual(failures, []);
+  });
+
+  /** The one that would quietly clear a real finding. */
+  it("removes one of two identical failures, since evidence about the second says nothing about the first", () => {
+    const same = 'link "API keys" did not accept a click within 10s';
+    const failures = [same, same];
+    assert.equal(withdrawFailure(failures, same), true);
+    assert.deepEqual(failures, [same]);
+  });
+
+  it("leaves other failures where they are", () => {
+    const failures = ["a stalled", "b stalled", "c stalled"];
+    withdrawFailure(failures, "b stalled");
+    assert.deepEqual(failures, ["a stalled", "c stalled"]);
+  });
+
+  it("says so when there is nothing by that name to take back", () => {
+    const failures = ["a stalled"];
+    assert.equal(withdrawFailure(failures, "never recorded"), false);
+    assert.deepEqual(failures, ["a stalled"]);
+  });
+});
 
 describe("usable: reading the model's answer", () => {
   it("takes a well-formed decision as it stands", () => {
