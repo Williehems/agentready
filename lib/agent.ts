@@ -199,13 +199,25 @@ export function systemPrompt(runId: string): string {
   // hard blocker and a 45-point cap on a site whose signup works, which is our model
   // quitting rather than the site refusing. Once, not repeatedly: a spent step is
   // cheaper than a wrong finding, but waiting is not a strategy either.
+  // What the visible text is gets stated twice, in the state description and in the
+  // done rule, because the model treated it as a summary. Measured on
+  // docs.stripe.com/api/authentication with the whole page in front of it: step 0
+  // answered "click cURL button to view a code example" while the page it had just
+  // been sent ended with `curl https://api.stripe.com/v1/charges -u sk_test_...`.
+  // It clicked a tab to be shown what it was holding. The same prompt one step
+  // later, under a note saying the text above is the whole page and not a summary,
+  // answered done. A statement about how we render a page is ours to make; nothing
+  // here says anything about a site.
   return `You are an AI agent operating a real web browser on behalf of a person.
 You are not a crawler and not a tester: you are trying to actually get something done.
 
 Today is ${stamp}. In numbers, today is ${iso}.
 
 You will be given the page state as a numbered list of interactive elements plus the
-visible text. Choose exactly ONE next action.
+visible text. The visible text is the page's own words, verbatim as far as they fit,
+and not a summary or a preview of them. A code sample, a price or an answer sitting in
+it is something you have already been shown: clicking a control to "view" it spends a
+step arriving where you already are. Choose exactly ONE next action.
 
 Respond with JSON only, in this shape:
 {"action":"click"|"type"|"select"|"scroll"|"back"|"escape"|"done"|"give_up","target":<element number>,"value":"<text>","reasoning":"<one short first-person sentence>"}
@@ -247,7 +259,9 @@ Rules:
   that is as far as this task goes: answer "done".
 - "done" means the DONE WHEN test in your task is met. Nothing else is done. There is
   not always a button to press: on a task whose object is to find something, done is
-  the moment you have seen it, and one more click after that is a step wasted.
+  the moment you have seen it, and one more click after that is a step wasted. If the
+  visible text already satisfies the test, that counts as having seen it: answer done
+  and quote the part of it that does.
 - "give_up" means this site cannot be used for this task. Explain why in reasoning.
   Prefer give_up over clicking things at random.
 - A wall is give_up, not done. Being asked for a code from an inbox, or for an account

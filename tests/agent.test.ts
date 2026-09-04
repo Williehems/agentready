@@ -1035,6 +1035,22 @@ describe("systemPrompt: the standing rules a step is decided under", () => {
     assert.match(said(), /one more click after that is a step wasted/);
   });
 
+  /**
+   * Step 0 of run mtmtn8da-8164bg, with the whole page in front of it: "click cURL
+   * button to view a code example", on a page whose text ended in
+   * `curl https://api.stripe.com/v1/charges`. It clicked a tab to be shown what it
+   * was already holding, so what the visible text is has to be said outright.
+   */
+  it("says the visible text is the page's own words rather than a summary of them", () => {
+    assert.match(said(), /the page's own words, verbatim as far as they fit/);
+    assert.match(said(), /clicking a control to "view" it spends a\s+step/);
+  });
+
+  it("counts a completion test met by the visible text as met", () => {
+    assert.match(said(), /If the\s+visible text already satisfies the test, that counts/);
+    assert.match(said(), /answer done\s+and quote the part of it that does/);
+  });
+
   it("does not let a wall be reported as a success", () => {
     assert.match(said(), /A wall is give_up, not done/);
     assert.match(said(), /Say which wall it was/);
