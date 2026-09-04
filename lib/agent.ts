@@ -497,11 +497,20 @@ interface ActPage extends AgentPage {
   setViewportSize(size: { width: number; height: number }): Promise<void>;
   goto(url: string, opts?: { timeout?: number; waitUntil?: "domcontentloaded" }): Promise<unknown>;
   context(): Contextish;
+  /** See Tabbish.bringToFront. A tab left in the background answers slowly. */
+  bringToFront?(): Promise<void>;
 }
 
 /** A tab, as far as watching where a click sent the visitor needs to care. */
 interface Tabbish {
   url(): string;
+  /**
+   * Present on a real tab, and needed to carry on inside one. Optional so the
+   * interface stays the small thing it is: a test that only watches where a click
+   * went does not have to pretend to be a browser.
+   */
+  bringToFront?(): Promise<void>;
+  isClosed?(): boolean;
 }
 
 /**
@@ -513,10 +522,38 @@ interface Contextish {
   on(event: "page", handler: (p: Tabbish) => void): void;
 }
 
+/**
+ * Is this tab still the site we were sent to audit?
+ *
+ * Compared on the last two labels of the host, so docs.stripe.com and
+ * dashboard.stripe.com are one site and github.com is not. Public suffixes with
+ * two labels of their own (a .co.uk) read as one site too, which errs toward
+ * following a tab we opened ourselves and never toward wandering off.
+ *
+ * The question is worth asking because a tab the site opened for itself is where
+ * the click went. Staying behind means the next perception describes a page the
+ * agent has already left, and measured on docs.stripe.com that is exactly what
+ * happened: the click on "API keys" opened /keys in a tab, we stayed on
+ * /api/authentication, and the model clicked the same link four times over.
+ */
+export function sameSite(a: string, b: string): boolean {
+  const site = (u: string) => {
+    try {
+      const { protocol, hostname } = new URL(u);
+      if (protocol !== "http:" && protocol !== "https:") return undefined;
+      return hostname.toLowerCase().split(".").slice(-2).join(".");
+    } catch {
+      return undefined;
+    }
+  };
+  const one = site(a);
+  return one !== undefined && one === site(b);
+}
+
 
 interface Locatorish {
   first(): Locatorish;
-  click(opts?: { timeout?: number }): Promise<void>;
+  click(opts?: { timeout?: number; force?: boolean }): Promise<void>;
   fill(value: string, opts?: { timeout?: number }): Promise<void>;
   selectOption(
     value: string | { label: string },
@@ -550,6 +587,14 @@ const CLICK_MS = 8_000;
 const FILL_MS = 8_000;
 const SELECT_MS = 5_000;
 const OUR_MARGIN = 2_000;
+/**
+ * The second attempt, with the hit-target check skipped.
+ *
+ * Measured at 2.5s on the link whose ordinary click was still pending 30s later,
+ * so this is generous rather than tight, and it is only ever reached on a click
+ * that has already spent CLICK_MS + OUR_MARGIN going nowhere.
+ */
+const FORCE_MS = 4_000;
 
 /**
  * What the page has on top of this element, in its own words.
@@ -711,6 +756,36 @@ export async function act(
     // owner can act on; "the action did not finish" is a line about our patience.
     if (err instanceof TimeoutError) {
       const clause = await whatIntercepts(locator);
+
+      /*
+       * Nothing is on top of it, and their own clock never fired either. Measured,
+       * that wait lives in the hit-target check, before anything is sent to the
+       * page: the same link that would not answer a click in 30s took a forced one
+       * in 2.5s. So send it, and only call the control broken if that fails too.
+       *
+       * Only on this branch, and this narrowness is the point. `force` skips the
+       * check that a click would reach the element, so on a control something is
+       * painted over it would click straight through the thing in the way and bury
+       * the finding an owner needs. Here the page has already said there is
+       * nothing in the way, which makes the wait ours and the click honest.
+       *
+       * Measured on docs.stripe.com/api/authentication: five of nine steps died on
+       * this wait, three of them on links that had already worked once, and the
+       * run spent its whole token budget clicking the same link over again.
+       */
+      if (clause === "" && d.action === "click") {
+        try {
+          await bounded(locator.click({ timeout: FORCE_MS, force: true }), FORCE_MS);
+          await settle();
+          return {
+            instead:
+              "slow to say whether a click could reach it, so the click was sent without asking again",
+          };
+        } catch {
+          // Still nothing. The original wait is the finding, and it is reported below.
+        }
+      }
+
       const secs = Math.round(err.ms / 1000);
       const tail =
         clause === undefined
@@ -1006,6 +1081,8 @@ export async function runAudit(opts: RunOptions): Promise<void> {
    */
   const opened: Tabbish[] = [];
   const handoffs = new Set<string>();
+  /** How many of `opened` have already been counted, so each tab counts once. */
+  let counted = 0;
   /** Tabs already given their settling time, so one that never navigates costs it once. */
   const settled = new Set<Tabbish>();
   /** Where a tab is now, or nothing when it closed underneath us. */
@@ -1017,8 +1094,8 @@ export async function runAudit(opts: RunOptions): Promise<void> {
     }
   };
   /** Re-read the remembered tabs, returning whatever address is new since last time. */
-  const sweepTabs = async (): Promise<string[]> => {
-    const fresh: string[] = [];
+  const sweepTabs = async (): Promise<{ tab: Tabbish; at: string }[]> => {
+    const fresh: { tab: Tabbish; at: string }[] = [];
     for (const tab of opened) {
       let at = addressOf(tab);
       if (at?.startsWith("about:") && !settled.has(tab)) {
@@ -1030,31 +1107,43 @@ export async function runAudit(opts: RunOptions): Promise<void> {
       }
       if (!at || at.startsWith("about:") || handoffs.has(at)) continue;
       handoffs.add(at);
-      fresh.push(at);
+      fresh.push({ tab, at });
     }
     return fresh;
   };
   /**
    * Report any tab that has appeared since the last look, and say whether one of
-   * them is somewhere an agent cannot follow.
+   * them is somewhere an agent cannot follow, or somewhere it should.
    *
    * The count matters as much as the destination. A click that opens a tab landed,
    * whatever the click promise went on to say about it, and that is the only proof
-   * available for a click whose own timeout fired.
+   * available for a click whose own timeout fired. Counted per tab rather than per
+   * new address, because a second click on the same link opens a second tab to the
+   * same place, and it landed exactly as much as the first one did.
    */
-  const reportTabs = async (): Promise<{ opened: number; deadEnd?: string }> => {
+  const reportTabs = async (): Promise<{
+    opened: number;
+    deadEnd?: string;
+    follow?: { tab: Tabbish; at: string };
+  }> => {
     let deadEnd: string | undefined;
-    let opened = 0;
-    for (const at of await sweepTabs()) {
-      opened++;
+    let follow: { tab: Tabbish; at: string } | undefined;
+    const appeared = opened.length - counted;
+    counted = opened.length;
+    for (const { tab, at } of await sweepTabs()) {
       await emit({
         type: "status",
         message: `The site opened ${handoffLabel(at)} in a tab of its own: ${at.slice(0, 120)}`,
         at: now(),
       });
-      deadEnd ??= isDeadEndHref(at) ? at : undefined;
+      if (isDeadEndHref(at)) {
+        deadEnd ??= at;
+        continue;
+      }
+      // The newest wins: it is where the click that just happened went.
+      if (sameSite(at, url)) follow = { tab, at };
     }
-    return { opened, deadEnd };
+    return { opened: appeared, deadEnd, follow };
   };
 
   try {
@@ -1094,7 +1183,9 @@ export async function runAudit(opts: RunOptions): Promise<void> {
       });
     }
 
-    const page = (await withTimeout(
+    // Not const: when the site opens one of its own pages in a tab, that tab is
+    // where the click went, and the run carries on inside it. See reportTabs.
+    let page = (await withTimeout(
       launched.browser.newPage(),
       30_000,
       "opening a tab",
@@ -1133,6 +1224,12 @@ export async function runAudit(opts: RunOptions): Promise<void> {
         });
         break;
       }
+
+      // A tab the site opened for itself leaves this one in the background, and a
+      // background tab is slow to answer the check that decides whether a click can
+      // land. Cheap, and it costs nothing on the ordinary run where this tab is
+      // already the front one.
+      await page.bringToFront?.().catch(() => {});
 
       const p = await perceive(page, clock.cap(PERCEIVE_MS));
       perceptions.push(p);
@@ -1309,13 +1406,26 @@ export async function runAudit(opts: RunOptions): Promise<void> {
 
       // Read after the step is reported, so the note about where a click sent the
       // visitor follows the click rather than preceding it.
-      const { opened: newTabs, deadEnd: handedOff } = await reportTabs();
+      const { opened: newTabs, deadEnd: handedOff, follow } = await reportTabs();
 
       // A click that opened a tab landed, whatever its own promise said about it.
       // Measured on docs.stripe.com: the click on "API keys" timed out at ten
       // seconds and the dashboard opened in a tab of its own, and the site was
       // charged form-stall for a link that works.
       if (newTabs > 0) landed("it opened a tab of its own");
+
+      // And the run carries on where the click went. A visitor whose click opens a
+      // tab is looking at that tab; an agent that stays behind sees the page it
+      // just left, decides the click failed, and takes the same turning again.
+      if (follow && !handedOff) {
+        page = follow.tab as unknown as ActPage;
+        await page.bringToFront?.().catch(() => {});
+        await emit({
+          type: "status",
+          message: `Carrying on in that tab: ${follow.at.slice(0, 120)}`,
+          at: now(),
+        });
+      }
 
       // The answer, and there is nothing after it. Measured on the run that proved
       // this finding: the submit opened WhatsApp, the first tab fell back to the

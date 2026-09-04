@@ -7,6 +7,7 @@ import {
   personaEmail,
   priceOnFrontPage,
   recall,
+  sameSite,
   taskBlock,
   usable,
   withdrawFailure,
@@ -261,7 +262,7 @@ describe("priceOnFrontPage: giving the page time to render its prices", () => {
 /** A locator that records what was asked of it and never touches a browser. */
 interface FakeLocator {
   first(): FakeLocator;
-  click(): Promise<void>;
+  click(opts?: { timeout?: number; force?: boolean }): Promise<void>;
   fill(value: string): Promise<void>;
   selectOption(value: unknown): Promise<string[]>;
 }
@@ -634,7 +635,14 @@ describe("act: an operation the browser never finishes", () => {
     return page as unknown as Parameters<typeof act>[0];
   };
 
-  /** Reach act()'s own deadline without spending ten real seconds getting there. */
+  /**
+   * Reach act()'s own deadline without spending ten real seconds getting there.
+   *
+   * Ticked more than once, with the real event loop let through in between: a
+   * click that hangs and reports nothing over it is retried without the
+   * hit-target check, and that retry starts its own clock only after the first
+   * one has gone off. One tick would leave the second wait pending forever.
+   */
   const raced = async (
     page: Parameters<typeof act>[0],
     d: Parameters<typeof act>[2],
@@ -642,7 +650,15 @@ describe("act: an operation the browser never finishes", () => {
     mock.timers.enable({ apis: ["setTimeout"] });
     try {
       const running = act(page, state, d);
-      mock.timers.tick(11_000);
+      let done = false;
+      void running.then(
+        () => (done = true),
+        () => (done = true),
+      );
+      for (let n = 0; n < 6 && !done; n += 1) {
+        mock.timers.tick(11_000);
+        await new Promise((r) => setImmediate(r));
+      }
       return await running;
     } finally {
       mock.timers.reset();
@@ -670,6 +686,66 @@ describe("act: an operation the browser never finishes", () => {
     assert.equal(why, 'link "/docs/llms.txt" did not accept a click within 10s');
   });
 
+  /*
+   * The retry, and the line it must not cross.
+   *
+   * Measured on docs.stripe.com/api/authentication: five of nine steps died on this
+   * wait, and three of them were links that had already worked once in the same
+   * run. The page said nothing was on top of them. A click sent without the
+   * hit-target check landed, which makes the wait ours and the link fine, so the
+   * site is not charged and the transcript says the click was sent.
+   */
+  it("sends the click without the check when the page says nothing is over it", async () => {
+    const forced: string[] = [];
+    const locator: HangLocator = {
+      first: () => locator,
+      click: (opts) => {
+        forced.push(opts?.force ? "forced" : "ordinary");
+        return opts?.force ? Promise.resolve() : new Promise<void>(() => {});
+      },
+      fill: () => new Promise<void>(() => {}),
+      selectOption: async () => [],
+      evaluate: async () => "",
+    };
+    const page = {
+      locator: () => locator,
+      getByRole: () => locator,
+      waitForLoadState: async () => {},
+      waitForTimeout: async () => {},
+      mouse: { wheel: async () => {} },
+    } as unknown as Parameters<typeof act>[0];
+
+    const out = await raced(page, { action: "click", target: 1, reasoning: "" });
+    assert.deepEqual(forced, ["ordinary", "forced"]);
+    assert.ok(typeof out === "object" && out !== null, `expected a substitution, got ${String(out)}`);
+    assert.match((out as { instead: string }).instead, /sent without asking/);
+  });
+
+  it("never sends it through whatever is painted over the control", async () => {
+    const tried: string[] = [];
+    const locator: HangLocator = {
+      first: () => locator,
+      click: (opts) => {
+        tried.push(opts?.force ? "forced" : "ordinary");
+        return new Promise<void>(() => {});
+      },
+      fill: () => new Promise<void>(() => {}),
+      selectOption: async () => [],
+      evaluate: async () => '<div> "Ask Assistant" is painted over it, so a click there never reaches it',
+    };
+    const page = {
+      locator: () => locator,
+      getByRole: () => locator,
+      waitForLoadState: async () => {},
+      waitForTimeout: async () => {},
+      mouse: { wheel: async () => {} },
+    } as unknown as Parameters<typeof act>[0];
+
+    const why = await raced(page, { action: "click", target: 1, reasoning: "" });
+    assert.deepEqual(tried, ["ordinary"]);
+    assert.match(failure(why), /is painted over it/);
+  });
+
   it("bounds a type the same way, since it is the same wait", async () => {
     const why = await raced(hangingPage(""), {
       action: "type",
@@ -690,6 +766,41 @@ describe("act: an operation the browser never finishes", () => {
  * palette listed no close button, so there was nothing in the element list to aim
  * at, and `back` was no help because nothing had navigated.
  */
+/**
+ * Whether a tab the site opened is still the site.
+ *
+ * This decides whether the run carries on inside that tab. Measured on
+ * docs.stripe.com/api/authentication, where "API keys" opens /keys in a tab of its
+ * own: staying behind had the model click the same link four times in nine steps.
+ * Following anything at all would instead have walked the audit off to github.com,
+ * which is not the site anyone asked about.
+ */
+describe("sameSite: is that tab still the site we were sent to", () => {
+  const run = "https://docs.stripe.com/api/authentication";
+
+  it("follows another page of the same host", () => {
+    assert.equal(sameSite("https://docs.stripe.com/keys", run), true);
+  });
+
+  it("follows a sibling subdomain, because that is still theirs", () => {
+    assert.equal(sameSite("https://dashboard.stripe.com/login?redirect=/apikeys", run), true);
+  });
+
+  it("does not follow a link out to somebody else", () => {
+    assert.equal(sameSite("https://github.com/stripe/stripe-python", run), false);
+  });
+
+  it("does not follow a scheme a browser cannot audit", () => {
+    assert.equal(sameSite("mailto:support@stripe.com", run), false);
+    assert.equal(sameSite("whatsapp://send?phone=234", run), false);
+  });
+
+  it("does not follow a tab that has not landed anywhere yet", () => {
+    assert.equal(sameSite("about:blank", run), false);
+    assert.equal(sameSite("", run), false);
+  });
+});
+
 describe("act: the way out of an overlay", () => {
   const state: Perception = {
     url: "https://resend.com/docs/api-reference/api-keys/create-api-key",
