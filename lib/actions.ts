@@ -9,6 +9,26 @@ export interface ActionSpec {
   label: string;
   /** Handed to the model verbatim as the task. */
   goal: string;
+  /**
+   * The test the model applies to know it has finished, handed to it verbatim.
+   *
+   * Here because two live runs proved the goal alone is not enough. On
+   * docs.stripe.com an `integrate` run reached /keys#obtain-api-keys and a
+   * quickstart full of copyable curl, which is the whole of what the goal asks
+   * for, and then spent its remaining steps clicking, never said "done", and was
+   * graded C 60 for a site that had answered it completely. A second run reached
+   * /get-started/development-environment and /agents#tools and did the same.
+   *
+   * The reason is in the prompt's shape: every rule around it is about fields,
+   * submits and disabled buttons, so a model reading it looks for a button that
+   * ends the task. On a task whose object is to find something there is no such
+   * button, and nothing told it that finding was finishing.
+   *
+   * Each of these names the state that counts, and each names the wall that does
+   * not, because "as far as a visitor can get" was the old wording and it invited
+   * a run stopped dead by an emailed code to call itself a success.
+   */
+  done: string;
   /** What "key info" means for this action, used for the found-key-info milestone. */
   keyInfo: string;
   /** Lowercased substrings that suggest the primary CTA for this action. */
@@ -23,6 +43,8 @@ export const ACTIONS: Record<ActionKind, ActionSpec> = {
     label: "Sign up",
     goal:
       "Create a new account on this site. Get as far as the account creation form and fill in what you can, but never submit real payment details.",
+    done:
+      "the site confirms an account now exists: a dashboard, a welcome page, or a message that the account was created. A page asking for a code from an inbox or a phone is not that. It is a wall, and the honest answer to a wall is give_up naming it.",
     keyInfo: "what the product does and what a plan costs or whether there is a free tier",
     ctaHints: ["sign up", "signup", "get started", "start free", "create account", "try free", "register", "join"],
     urlHints: ["signup", "sign-up", "register", "join", "create-account", "get-started"],
@@ -32,6 +54,8 @@ export const ACTIONS: Record<ActionKind, ActionSpec> = {
     label: "Buy something",
     goal:
       "Buy the cheapest available product or plan. Get as far as the checkout or payment step, then stop. Never enter real payment details.",
+    done:
+      "the checkout or payment step is on screen with its card fields visible. That is the end of this task by design, so stop there rather than filling them.",
     keyInfo: "the price of at least one product, as selectable text rather than an image",
     ctaHints: ["buy", "add to cart", "add to bag", "checkout", "order", "purchase", "shop", "subscribe", "choose plan", "select plan"],
     urlHints: ["cart", "checkout", "basket", "order", "pricing", "product", "shop"],
@@ -41,6 +65,8 @@ export const ACTIONS: Record<ActionKind, ActionSpec> = {
     label: "Integrate the API",
     goal:
       "You are a developer evaluating this product. Find the API documentation, a code example you could copy, and how to obtain an API key.",
+    done:
+      "you have seen a code example you could copy and a page that states where an API key comes from. Both are facts to find, not things to hold: you do not need an account and you do not need a key of your own. Once you have read both, you are finished.",
     keyInfo: "a copyable code example and a stated route to an API key",
     ctaHints: ["docs", "documentation", "api", "developers", "developer", "quickstart", "reference", "get api key"],
     urlHints: ["docs", "developer", "api", "reference", "quickstart"],
@@ -61,6 +87,8 @@ export const ACTIONS: Record<ActionKind, ActionSpec> = {
      */
     goal:
       "Book an appointment, demo, or reservation. Pick whatever slot or time the site offers, fill in the visitor details it asks for, then press the control that submits the booking request. Never enter payment card details.",
+    done:
+      "the booking has been submitted and the site has said what became of it, whether that is a confirmation, a reference, or an error. Submitting and being told nothing at all is also an answer: report done and say the site went silent.",
     keyInfo: "available times or dates, and what the appointment is for",
     ctaHints: ["book", "reserve", "schedule", "appointment", "demo", "consultation", "request a demo", "talk to sales"],
     urlHints: ["book", "booking", "reserve", "schedule", "appointment", "demo", "calendar"],
@@ -70,6 +98,8 @@ export const ACTIONS: Record<ActionKind, ActionSpec> = {
     label: "Reach a human",
     goal:
       "Reach a human at this organisation. Find a working contact route and get as far as composing a message, then stop before sending.",
+    done:
+      "a contact form is on screen with your message typed into it, ready to send. Stop there without sending it.",
     keyInfo: "a named contact route that works without leaving the browser",
     ctaHints: ["contact", "contact us", "get in touch", "support", "help", "talk to us", "message us", "enquire", "inquire"],
     urlHints: ["contact", "support", "help", "enquiry", "inquiry", "get-in-touch"],

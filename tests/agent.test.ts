@@ -7,10 +7,12 @@ import {
   personaEmail,
   priceOnFrontPage,
   recall,
+  taskBlock,
   usable,
   withdrawFailure,
   withOurEmail,
 } from "../lib/agent";
+import { ACTIONS } from "../lib/actions";
 import { fingerprint } from "../lib/perceive";
 import type { Perception } from "../lib/types";
 
@@ -599,6 +601,30 @@ describe("act: an operation the browser never finishes", () => {
       reasoning: "",
     });
     assert.match(failure(why), /did not accept a type within 10s/);
+  });
+});
+
+describe("taskBlock: the task the model is handed on every step", () => {
+  it("carries the goal and the test for finishing it, labelled", () => {
+    const block = taskBlock(ACTIONS.integrate);
+    assert.match(block, /^TASK: You are a developer evaluating this product\./);
+    assert.match(block, /\n\nDONE WHEN: you have seen a code example/);
+  });
+
+  /**
+   * Both halves, every step, which is the whole point of putting it here rather
+   * than in the system prompt or in a first-step preamble. The model gets one
+   * message and keeps nothing between calls, so a completion test stated at the
+   * start of a run is a completion test it does not have when it is standing on
+   * the page that satisfies it. That is measurably what happened: two runs
+   * reached the page and kept clicking.
+   */
+  it("holds every action's own test, so no action is handed a generic one", () => {
+    for (const spec of Object.values(ACTIONS)) {
+      const block = taskBlock(spec);
+      assert.ok(block.includes(spec.goal), `${spec.id} lost its goal`);
+      assert.ok(block.includes(spec.done), `${spec.id} lost its completion test`);
+    }
   });
 });
 

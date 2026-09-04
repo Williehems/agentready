@@ -1,7 +1,7 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
-import { ACTIONS, handoffLabel, isDeadEndHref } from "./actions";
+import { ACTIONS, type ActionSpec, handoffLabel, isDeadEndHref } from "./actions";
 import { Deadline, TimeoutError, withTimeout } from "./deadline";
 import { groqJson, type ChatOptions } from "./groq";
 import { type AgentPage, fingerprint, looksPriced, perceive, renderState } from "./perceive";
@@ -237,10 +237,14 @@ Rules:
   format the field asks for, and default to YYYY-MM-DD when it does not say.
 - NEVER enter real payment card details. If a page demands card details to continue,
   that is as far as this task goes: answer "done".
-- "done" means the task is complete, OR you have reached the furthest point a visitor
-  can reach without paying and without a pre-existing account credential.
+- "done" means the DONE WHEN test in your task is met. Nothing else is done. There is
+  not always a button to press: on a task whose object is to find something, done is
+  the moment you have seen it, and one more click after that is a step wasted.
 - "give_up" means this site cannot be used for this task. Explain why in reasoning.
   Prefer give_up over clicking things at random.
+- A wall is give_up, not done. Being asked for a code from an inbox, or for an account
+  you do not have, is the site stopping you, and calling that a success hides the one
+  thing worth reporting. Say which wall it was.
 - give_up is for a site you cannot use, not for a step you cannot find. A form only
   shows you where you are now, so a field you passed earlier is not missing. If the
   control that finishes the task is in the list, use it.
@@ -363,9 +367,22 @@ export function recall(memory: Memory, p: Perception): string {
   return `${recent}${inert}${again}`;
 }
 
+/**
+ * The task as the model receives it: what to do, and how to know it is finished.
+ *
+ * Both halves every step, not just the first. The model has no memory between
+ * calls beyond what is in the message, so a completion test stated once at the
+ * top of a run is a completion test the model does not have when it is standing
+ * on the page that satisfies it. See ActionSpec.done for the two runs that
+ * reached exactly that page and kept clicking.
+ */
+export function taskBlock(spec: ActionSpec): string {
+  return `TASK: ${spec.goal}\n\nDONE WHEN: ${spec.done}`;
+}
+
 async function decide(
   p: Perception,
-  goal: string,
+  task: string,
   stepsLeft: number,
   memory: Memory,
   timeoutMs: number,
@@ -380,7 +397,7 @@ async function decide(
     const raw = await groqJson<unknown>(
       [
         { role: "system", content: systemPrompt(runId) },
-        { role: "user", content: `TASK: ${goal}\n\n${state}${recall(memory, p)}` },
+        { role: "user", content: `${task}\n\n${state}${recall(memory, p)}` },
       ],
       { maxTokens: 600, temperature: 0.1, timeoutMs, ...meter, signal },
     );
@@ -1058,7 +1075,7 @@ export async function runAudit(opts: RunOptions): Promise<void> {
 
       const outcome = await decide(
         p,
-        spec.goal,
+        taskBlock(spec),
         maxSteps - i,
         memory,
         clock.cap(DECIDE_MS),
