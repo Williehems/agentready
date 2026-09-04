@@ -1,6 +1,15 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { fingerprint, marks, modalIsOpen, parseAriaSnapshot, prose, renderState, resembles } from "../lib/perceive";
+import {
+  capped,
+  fingerprint,
+  marks,
+  modalIsOpen,
+  parseAriaSnapshot,
+  prose,
+  renderState,
+  resembles,
+} from "../lib/perceive";
 import type { Perception } from "../lib/types";
 
 /**
@@ -752,6 +761,46 @@ describe("prose: the page rather than the furniture around it", () => {
 
   it("survives a page that answered with nothing at all", () => {
     assert.equal(prose({ body: "", content: "", chrome: [] }), "");
+  });
+});
+
+/**
+ * The tail of docs.stripe.com/api/authentication, which fills the allowance to the
+ * character. The last thing the model read was a copy button's label sliced in half,
+ * one line under a curl sample: nothing to learn from, and an invitation to go and
+ * click a language tab for the whole one.
+ */
+describe("capped: where the prose is allowed to stop", () => {
+  it("leaves a page that fits alone", () => {
+    assert.equal(capped("short enough", 50), "short enough");
+  });
+
+  it("ends on the last whole line when the cut is nearly there anyway", () => {
+    const text = "curl https://api.stripe.com/v1/charges\n  -u sk_test_REAL\nsk_test_BQoki";
+    assert.equal(capped(text, 64, 20), "curl https://api.stripe.com/v1/charges\n  -u sk_test_REAL");
+  });
+
+  /**
+   * The other way round, and the reason the boundary is bounded. A cut landing
+   * early in a long line would drop the whole line, and on this page the long line
+   * is the code sample the grader reads its evidence from.
+   */
+  it("keeps a long line mangled rather than throwing it away whole", () => {
+    const text = `intro\n${"curl https://api.stripe.com/v1/charges -u sk_test_REAL".repeat(4)}`;
+    const out = capped(text, 60, 20);
+    assert.equal(out.length, 60);
+    assert.ok(out.includes("curl "), "the sign the grader reads must survive the cut");
+  });
+
+  it("does not cut at a break that is nowhere near the end", () => {
+    assert.equal(capped(`a\n${"b".repeat(400)}`, 100, 20).length, 100);
+  });
+
+  /** The real numbers, since the slack is only meaningful against the allowance. */
+  it("gives up at most the slack, whatever the page looks like", () => {
+    const lines = Array.from({ length: 400 }, (_, i) => `line ${i} of the page`).join("\n");
+    assert.ok(capped(lines).length >= 2800 - 160);
+    assert.ok(capped(lines).length <= 2800);
   });
 });
 

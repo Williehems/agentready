@@ -258,6 +258,37 @@ export function readZones(): { body: string; content: string; chrome: string[] }
 const MAX_ELEMENTS = 60;
 export const MAX_TEXT = 2800;
 /**
+ * How much of the last line may be given up to avoid ending mid-word.
+ *
+ * Measured on docs.stripe.com/api/authentication, whose prose ends at exactly the
+ * allowance and where the last thing the model read was:
+ *
+ *     curl https://api.stripe.com/v1/charges \
+ *       -u sk_test_BQokikJOvBiI2HlWgH4olfQ2
+ *     sk_test_BQoki
+ *
+ * That third line is a copy button's label sliced in half. Nothing is learned from
+ * it, and a sample that trails off unfinished invites exactly the move the run kept
+ * making: clicking a language tab to go and find the whole one.
+ *
+ * Bounded, because trimming to a line boundary can cost more than it saves. If the
+ * cut lands early in a long line, the line dropped could be the code sample itself,
+ * and the grader reads this same string for its evidence. So the boundary is taken
+ * only when it is close: a partial line longer than this stays, mangled, rather
+ * than being thrown away whole.
+ */
+const CLEAN_CUT = 160;
+
+/**
+ * The prose the run keeps, cut at the allowance and, where cheap, at a line end.
+ */
+export function capped(text: string, max = MAX_TEXT, slack = CLEAN_CUT): string {
+  if (text.length <= max) return text;
+  const hard = text.slice(0, max);
+  const lastBreak = hard.lastIndexOf("\n");
+  return lastBreak >= max - slack ? hard.slice(0, lastBreak) : hard;
+}
+/**
  * How many of the sixty slots the page's furniture may hold when its own content
  * wants them all.
  *
@@ -722,7 +753,7 @@ export async function perceive(page: AgentPage, timeoutMs = PERCEIVE_MS): Promis
   ]);
 
   const elements = parseAriaSnapshot(snapshot, modalOpen);
-  const text = prose(zones).slice(0, MAX_TEXT);
+  const text = capped(prose(zones));
 
   return {
     url: page.url(),
