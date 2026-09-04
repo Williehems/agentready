@@ -396,14 +396,28 @@ export function grade(t: Transcript): Verdict {
 
   const inconclusive = neverArrived && Boolean(t.abandoned);
 
+  // Arrived, then we stopped it. The milestones above were observed and they
+  // stand; the letter does not, because `completed-action` is worth 40 of the
+  // 100 points and this run was never allowed to try for them. Measured: our
+  // free-tier daily token allowance ran out at step 3 of a 14-step budget on
+  // docs.stripe.com and the verdict came back C 60, which is a grade about our
+  // billing wearing the site's name.
+  //
+  // Only when the run neither finished nor quit of its own accord: a run that
+  // declared done had its chance and a run that gave up made a choice, and
+  // withholding the letter from either would hide a real finding.
+  const cutShort =
+    !inconclusive && t.abandoned && !t.declaredDone && !t.gaveUp ? t.abandoned : undefined;
+
   return {
     grade: letter,
     score,
     milestones,
     blockers,
     steps: t.stepCount,
-    summary: summarise(letter, t, milestones, blockers, spec.label, inconclusive),
+    summary: summarise(letter, t, milestones, blockers, spec.label, inconclusive, Boolean(cutShort)),
     ...(inconclusive ? { inconclusive: true as const } : {}),
+    ...(cutShort ? { cutShort } : {}),
   };
 }
 
@@ -414,20 +428,26 @@ function summarise(
   blockers: BlockerHit[],
   actionLabel: string,
   inconclusive = false,
+  cutShort = false,
 ): string {
   const task = actionLabel.toLowerCase();
-  // Said first, because it changes how every number after it should be read.
-  const cutShort = t.abandoned
-    ? ` The run stopped early for a reason outside the site (${t.abandoned}), so this is a floor, not a ceiling.`
-    : "";
 
   if (inconclusive) {
     return `No verdict: the run never reached the site (${t.abandoned}), so there is nothing to grade. Nothing here is a finding about ${task}.`;
   }
+  // Before the branches that read as findings, because a run our side stopped is
+  // not a finding. Every other abandonment either never arrived, and is caught
+  // above, or ended on the agent's own terms, and keeps its letter.
+  if (cutShort) {
+    const got = milestones.length
+      ? `It got as far as ${milestones.length} of 4 checkpoints in ${t.stepCount} steps`
+      : `It reached no checkpoint in ${t.stepCount} steps`;
+    return `No grade: our side stopped this run before it could finish (${t.abandoned}). ${got}, and whether it could have completed "${task}" was never put to the test.`;
+  }
   if (milestones.includes("completed-action")) {
     return `An AI agent completed "${task}" in ${t.stepCount} steps.${
       blockers.length ? ` It worked, but it had to get past ${blockers.length} obstacle(s) on the way.` : ""
-    }${cutShort}`;
+    }`;
   }
   const primary = blockers[0];
   if (primary) {
@@ -436,7 +456,7 @@ function summarise(
       : milestones.includes("understood-offering")
         ? "It understood what you sell but never reached the action"
         : "It could not even read what you sell";
-    return `An AI agent failed to ${task}. ${where}. Primary blocker: ${primary.blocker}.${cutShort}`;
+    return `An AI agent failed to ${task}. ${where}. Primary blocker: ${primary.blocker}.`;
   }
-  return `An AI agent failed to ${task} within ${t.stepCount} steps, without hitting a specific blocker. Grade ${letter}.${cutShort}`;
+  return `An AI agent failed to ${task} within ${t.stepCount} steps, without hitting a specific blocker. Grade ${letter}.`;
 }

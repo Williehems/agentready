@@ -52,6 +52,18 @@ export interface Verdict {
    */
   inconclusive?: true;
   /**
+   * Why our side ended a run that had already reached the site, or absent when
+   * the run ended on its own terms.
+   *
+   * Different from `inconclusive`: what the agent saw before we cut it off is
+   * real, so the milestones and blockers stand. What is not real is the letter,
+   * because forty of the hundred points are only winnable by finishing and this
+   * run was never allowed to try. Measured: a run stopped at step 3 of 14 when
+   * our free-tier daily token allowance ran out and reported C 60 against
+   * docs.stripe.com, a grade about our billing.
+   */
+  cutShort?: string;
+  /**
    * The Solari session behind this run. The recording is uploaded minutes after
    * the session is released, so the replay is fetched on demand from this id
    * rather than holding the run open waiting for it.

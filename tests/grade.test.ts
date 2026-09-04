@@ -605,7 +605,7 @@ describe("grade: a run cut short by our own side", () => {
     assert.equal(v.grade, "C");
   });
 
-  it("says in the summary that the grade is a floor, and why", () => {
+  it("says in the summary that our side stopped it, and why", () => {
     const v = grade(
       transcript({
         action: "purchase",
@@ -614,9 +614,47 @@ describe("grade: a run cut short by our own side", () => {
         abandoned: "Groq rate limit reached",
       }),
     );
-    assert.match(v.summary, /stopped early for a reason outside the site/);
+    assert.match(v.summary, /^No grade: our side stopped this run/);
     assert.match(v.summary, /Groq rate limit reached/);
-    assert.match(v.summary, /floor, not a ceiling/);
+    assert.match(v.summary, /never put to the test/);
+  });
+
+  it("withholds the letter, because the points for finishing were never winnable", () => {
+    // Measured on run 8 of docs.stripe.com: our free-tier daily token allowance
+    // ran out at step 3 of a 14-step budget and the card published C 60, a grade
+    // about our billing wearing Stripe's name.
+    const v = grade(
+      transcript({
+        action: "integrate",
+        perceptions: [reached()],
+        stepCount: 3,
+        abandoned: "Groq rate limit reached: the wait it asked for (152s) is longer than this run can spare",
+      }),
+    );
+    assert.equal(v.cutShort, "Groq rate limit reached: the wait it asked for (152s) is longer than this run can spare");
+    assert.equal(v.inconclusive, undefined, "it did reach the site, so there is something to report");
+    assert.ok(v.milestones.length > 0, "what it saw before we stopped it still counts");
+  });
+
+  it("keeps the letter when the agent itself gave up", () => {
+    // A choice the agent made is a finding. Only our own interruptions are not.
+    const v = grade(
+      transcript({
+        action: "purchase",
+        perceptions: [reached()],
+        stepCount: 5,
+        gaveUp: true,
+        abandoned: "Groq rate limit reached",
+      }),
+    );
+    assert.equal(v.cutShort, undefined);
+    assert.equal(v.grade, "C");
+  });
+
+  it("says nothing about being cut short on a run that finished normally", () => {
+    const v = grade(transcript({ action: "purchase", perceptions: [reached()] }));
+    assert.equal(v.cutShort, undefined);
+    assert.ok(!v.summary.includes("No grade"));
   });
 
   it("adds no blocker of its own", () => {
@@ -629,7 +667,7 @@ describe("grade: a run cut short by our own side", () => {
 
   it("stays quiet about it on a run that finished normally", () => {
     const v = grade(transcript({ action: "purchase", perceptions: [reached()] }));
-    assert.ok(!v.summary.includes("outside the site"));
+    assert.ok(!v.summary.includes("our side stopped"));
   });
 });
 
