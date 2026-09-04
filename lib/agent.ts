@@ -4,7 +4,14 @@ import { z } from "zod";
 import { ACTIONS, type ActionSpec, handoffLabel, isDeadEndHref } from "./actions";
 import { Deadline, TimeoutError, withTimeout } from "./deadline";
 import { type ChatOptions, dailyHoldMs, groqJson } from "./groq";
-import { type AgentPage, looksPriced, perceive, renderState, resembles } from "./perceive";
+import {
+  type AgentPage,
+  looksPriced,
+  MAX_TEXT,
+  perceive,
+  renderState,
+  resembles,
+} from "./perceive";
 import { grade, type Transcript } from "./grade";
 import { closeClient, launchBrowser, releaseSession } from "./solari";
 import type { ActionKind, Perception, RunEvent, StepAction } from "./types";
@@ -156,12 +163,20 @@ type Outcome =
   | { kind: "unavailable"; why: string };
 
 /**
- * How much page prose to send the model. Full text on the opening move, because
- * that is where the model works out what the site is; a slice after that,
- * because by then it needs the controls, and the free tier meters tokens per
- * minute across the whole burst.
+ * How much page prose to send the model. The whole perception on a page it has not
+ * read yet, a slice on one it has: by the second visit it needs the controls, and
+ * the free tier meters tokens per minute across the whole burst.
+ *
+ * The first number is MAX_TEXT itself, and that is the point. It was 2400 against a
+ * 2800-character perception, and the 400 characters in the gap were the ones that
+ * mattered: on docs.stripe.com/api/authentication the page states where an API key
+ * comes from at character 1500 and carries `curl https://api.stripe.com/v1/charges`
+ * at 2700, so the model was handed half of what it was sent to find, went looking
+ * for the other half that was already in front of it, and never finished. The
+ * grader reads all 2800. A grader reading text the model was never shown is
+ * grading a page nobody visited.
  */
-const TEXT_FIRST = 2400;
+const TEXT_FIRST = MAX_TEXT;
 const TEXT_LATER = 1100;
 
 /**
@@ -440,6 +455,25 @@ export function taskBlock(spec: ActionSpec): string {
   return `TASK: ${spec.goal}\n\nDONE WHEN: ${spec.done}`;
 }
 
+/**
+ * How much of this page's prose the model gets, this step.
+ *
+ * The whole thing on a page it has not read, the slice on one it has. Not "the
+ * first step" alone: a run that reaches the docs page on step 4 is reading that
+ * page for the first time on step 4, and handing it a third of the text there is
+ * the same defect as handing it a third on step 1. isFirst is still taken as an
+ * argument because step 0 has an empty memory with nothing to resemble.
+ *
+ * Exported to be tested without a browser or a model, which is the only way this
+ * gets pinned: the failure it fixes is invisible in the transcript. The stored
+ * perception carries both halves of the task, the grader reads both halves, and
+ * the step reads "click Ruby to view a code example" because the model was shown
+ * one half.
+ */
+export function textBudget(p: Perception, memory: Memory, isFirst: boolean): number {
+  return isFirst || !visited(memory, p) ? TEXT_FIRST : TEXT_LATER;
+}
+
 async function decide(
   p: Perception,
   task: string,
@@ -451,7 +485,7 @@ async function decide(
   meter: Meter = {},
   signal?: AbortSignal,
 ): Promise<Outcome> {
-  const state = renderState(p, stepsLeft, isFirst ? TEXT_FIRST : TEXT_LATER);
+  const state = renderState(p, stepsLeft, textBudget(p, memory, isFirst));
 
   try {
     const raw = await groqJson<unknown>(

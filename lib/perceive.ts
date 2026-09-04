@@ -256,7 +256,7 @@ export function readZones(): { body: string; content: string; chrome: string[] }
 }
 
 const MAX_ELEMENTS = 60;
-const MAX_TEXT = 2800;
+export const MAX_TEXT = 2800;
 /**
  * How many of the sixty slots the page's furniture may hold when its own content
  * wants them all.

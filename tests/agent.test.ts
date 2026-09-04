@@ -9,11 +9,13 @@ import {
   recall,
   sameSite,
   taskBlock,
+  textBudget,
   usable,
   withdrawFailure,
   withOurEmail,
 } from "../lib/agent";
 import { ACTIONS } from "../lib/actions";
+import { MAX_TEXT, renderState } from "../lib/perceive";
 import type { Perception } from "../lib/types";
 
 /**
@@ -604,6 +606,83 @@ interface HangLocator extends FakeLocator {
  * what the transcript and the model are handed is the site's defect rather than a
  * note about our patience.
  */
+/**
+ * The ceiling nothing in the transcript showed. Twenty-eight runs, no site above
+ * C 60, and completed-action never once awarded.
+ *
+ * Measured on run mtmqsldq-rytmay against docs.stripe.com/api/authentication. The
+ * stored perception carried both halves of the integrate task: the page states
+ * where an API key comes from, and it prints `curl https://api.stripe.com/v1/charges`
+ * near the end of the 2800 characters perceive() keeps. The grader read both and
+ * would have credited the site. The model was handed 2400 of those characters and
+ * its step 1 reasoning was "click Ruby to view a code example": it went looking for
+ * the thing it was standing on, because the thing it was standing on had been cut
+ * off 400 characters before it.
+ *
+ * So the budget is pinned to MAX_TEXT here rather than written down twice. Two
+ * numbers that have to agree and are declared in different files do not stay
+ * agreed, and when they drift the run does not fail, it just quietly grades a page
+ * nobody read.
+ */
+describe("textBudget: the model reads what the grader reads", () => {
+  /** The answer, where docs keep it: at the very end of what perceive() kept. */
+  const answer = "curl https://api.stripe.com/v1/charges -u sk_test_ANSWER";
+  /** A page filled to the allowance exactly, so a budget short by one loses it. */
+  const long = (): Perception => ({
+    url: "https://docs.stripe.com/api/authentication",
+    title: "Authentication | Stripe API Reference",
+    text:
+      "Authentication to the API is performed via HTTP Basic Auth. "
+        .repeat(50)
+        .slice(0, MAX_TEXT - answer.length) + answer,
+    jsGated: false,
+    hasPrice: false,
+    elements: [
+      { index: 1, role: "link", name: "API keys", ref: "e3", href: "/keys" },
+      { index: 2, role: "tab", name: "Ruby", ref: "e4" },
+    ],
+  });
+  const fresh = (): Memory => ({ history: [], inert: new Set(), seen: [] });
+
+  it("hands over the whole perception on the opening move", () => {
+    const p = long();
+    assert.equal(textBudget(p, fresh(), true), MAX_TEXT);
+    assert.match(renderState(p, 9, textBudget(p, fresh(), true)), /sk_test_ANSWER/);
+  });
+
+  /**
+   * The half of this that "first step" alone never covered. A run reaches the docs
+   * page on step 4, reads a third of it, and leaves to look for what was on it.
+   */
+  it("hands over the whole perception on a page reached later and not yet read", () => {
+    const p = long();
+    const m = fresh();
+    m.seen.push({
+      page: { ...p, url: "https://stripe.com/", title: "Stripe", elements: [] },
+      moves: ['click "Docs"'],
+    });
+    assert.equal(textBudget(p, m, false), MAX_TEXT);
+    assert.match(renderState(p, 6, textBudget(p, m, false)), /sk_test_ANSWER/);
+  });
+
+  it("cuts it down on a page the run has already read to the end", () => {
+    const p = long();
+    const m = fresh();
+    m.seen.push({ page: p, moves: ['click "API keys"'] });
+    const budget = textBudget(p, m, false);
+    assert.ok(budget < MAX_TEXT, `a page read already should not be re-read in full, got ${budget}`);
+    assert.ok(!renderState(p, 4, budget).includes("sk_test_ANSWER"));
+    // Still the controls, which is what a second visit is for.
+    assert.match(renderState(p, 4, budget), /\[link\] API keys/);
+  });
+
+  it("cuts nothing off the first page even when it fills the whole allowance", () => {
+    const p = long();
+    assert.equal(p.text.length, MAX_TEXT);
+    assert.ok(renderState(p, 9, textBudget(p, fresh(), true)).includes(p.text));
+  });
+});
+
 describe("act: an operation the browser never finishes", () => {
   const state: Perception = {
     url: "https://resend.com/docs/api-reference/api-keys/create-api-key",
