@@ -79,7 +79,8 @@ export function GradeCard({ verdict, url }: { verdict: Verdict; url: string }) {
           <p className="text-sm leading-relaxed text-text">{verdict.summary}</p>
           <div className="text-[11px] text-muted">
             {verdict.cutShort ? "" : `${verdict.score}/100 · `}
-            {verdict.steps} steps · {new URL(url).hostname}
+            {verdict.steps} {verdict.steps === 1 ? "step" : "steps"} ·{" "}
+            {new URL(url).hostname}
           </div>
         </div>
       </header>

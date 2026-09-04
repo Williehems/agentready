@@ -61,6 +61,15 @@ export default function Home() {
             >
               run an audit
             </Link>
+            {/* The evidence, one click from the front door. A stranger should be able
+                to read a real graded run without spending a browser session of ours
+                to make one. */}
+            <Link
+              href="/runs"
+              className="text-[11px] font-bold uppercase tracking-[0.16em] text-text/70 underline decoration-text/30 underline-offset-4 hover:text-text"
+            >
+              see graded runs
+            </Link>
             <span className="text-[11px] text-text/60">
               One cloud browser per run.
               <br className="hidden sm:block" /> No payment details are ever entered.

@@ -1,0 +1,450 @@
+{
+  "runId": "mtmvbwgn-6pofvk",
+  "url": "https://docs.stripe.com/api/authentication",
+  "action": "integrate",
+  "spend": {
+    "calls": 1,
+    "promptTokens": 2873,
+    "completionTokens": 78,
+    "heldMs": 0,
+    "remainingTokens": 4863,
+    "limitTokens": 8000
+  },
+  "transcript": {
+    "action": "integrate",
+    "startUrl": "https://docs.stripe.com/api/authentication",
+    "perceptions": [
+      {
+        "url": "https://docs.stripe.com/api/authentication",
+        "title": "Authentication | Stripe API Reference",
+        "elements": [
+          {
+            "index": 1,
+            "role": "link",
+            "name": "",
+            "ref": "e13",
+            "href": "/api"
+          },
+          {
+            "index": 2,
+            "role": "button",
+            "name": "Stripe",
+            "ref": "e19"
+          },
+          {
+            "index": 3,
+            "role": "button",
+            "name": "Find anything",
+            "ref": "e26"
+          },
+          {
+            "index": 4,
+            "role": "button",
+            "name": "Ask AI",
+            "ref": "e33"
+          },
+          {
+            "index": 5,
+            "role": "link",
+            "name": "Introduction",
+            "ref": "e44",
+            "href": "https://docs.stripe.com/api"
+          },
+          {
+            "index": 6,
+            "role": "link",
+            "name": "Authentication",
+            "ref": "e48",
+            "href": "https://docs.stripe.com/api/authentication"
+          },
+          {
+            "index": 7,
+            "role": "link",
+            "name": "Errors",
+            "ref": "e52",
+            "href": "https://docs.stripe.com/api/errors"
+          },
+          {
+            "index": 8,
+            "role": "link",
+            "name": "Expanding Responses",
+            "ref": "e56",
+            "href": "https://docs.stripe.com/api/expanding_objects"
+          },
+          {
+            "index": 9,
+            "role": "link",
+            "name": "Idempotent requests",
+            "ref": "e60",
+            "href": "https://docs.stripe.com/api/idempotent_requests"
+          },
+          {
+            "index": 10,
+            "role": "link",
+            "name": "Include-dependent response values (API v2)",
+            "ref": "e64",
+            "href": "https://docs.stripe.com/api/include_dependent_response_values"
+          },
+          {
+            "index": 11,
+            "role": "link",
+            "name": "Metadata",
+            "ref": "e68",
+            "href": "https://docs.stripe.com/api/metadata"
+          },
+          {
+            "index": 12,
+            "role": "link",
+            "name": "Pagination",
+            "ref": "e72",
+            "href": "https://docs.stripe.com/api/pagination"
+          },
+          {
+            "index": 13,
+            "role": "link",
+            "name": "Request IDs",
+            "ref": "e76",
+            "href": "https://docs.stripe.com/api/request_ids"
+          },
+          {
+            "index": 14,
+            "role": "link",
+            "name": "Connected Accounts",
+            "ref": "e80",
+            "href": "https://docs.stripe.com/api/connected-accounts"
+          },
+          {
+            "index": 15,
+            "role": "link",
+            "name": "Versioning",
+            "ref": "e84",
+            "href": "https://docs.stripe.com/api/versioning"
+          },
+          {
+            "index": 16,
+            "role": "link",
+            "name": "Enums",
+            "ref": "e88",
+            "href": "https://docs.stripe.com/api/enums"
+          },
+          {
+            "index": 17,
+            "role": "link",
+            "name": "Accountsv2",
+            "ref": "e98",
+            "href": "https://docs.stripe.com/api/v2/core/accounts"
+          },
+          {
+            "index": 18,
+            "role": "link",
+            "name": "Account Linksv2",
+            "ref": "e102",
+            "href": "https://docs.stripe.com/api/v2/core/account-links"
+          },
+          {
+            "index": 19,
+            "role": "link",
+            "name": "API Reference",
+            "ref": "e627",
+            "href": "/api"
+          },
+          {
+            "index": 20,
+            "role": "link",
+            "name": "REST",
+            "ref": "e650",
+            "href": "http://en.wikipedia.org/wiki/Representational_State_Transfer"
+          },
+          {
+            "index": 21,
+            "role": "link",
+            "name": "form-encoded",
+            "ref": "e651",
+            "href": "https://en.wikipedia.org/wiki/POST_(HTTP)#Use_for_submitting_web_forms"
+          },
+          {
+            "index": 22,
+            "role": "link",
+            "name": "JSON-encoded",
+            "ref": "e652",
+            "href": "http://www.json.org/"
+          },
+          {
+            "index": 23,
+            "role": "link",
+            "name": "sandboxes",
+            "ref": "e654",
+            "href": "/sandboxes"
+          },
+          {
+            "index": 24,
+            "role": "link",
+            "name": "authenticate",
+            "ref": "e655",
+            "href": "/api/authentication"
+          },
+          {
+            "index": 25,
+            "role": "link",
+            "name": "v2 APIs",
+            "ref": "e656",
+            "href": "/testing-use-cases#compare"
+          },
+          {
+            "index": 26,
+            "role": "link",
+            "name": "versions",
+            "ref": "e659",
+            "href": "/api/versioning"
+          },
+          {
+            "index": 27,
+            "role": "link",
+            "name": "Log in",
+            "ref": "e660",
+            "href": "https://dashboard.stripe.com/login?redirect=https%3A%2F%2Fdocs.stripe.com%2Fapi%2Fauthentication"
+          },
+          {
+            "index": 28,
+            "role": "button",
+            "name": "Yes",
+            "ref": "e665"
+          },
+          {
+            "index": 29,
+            "role": "button",
+            "name": "No",
+            "ref": "e666"
+          },
+          {
+            "index": 30,
+            "role": "link",
+            "name": "development quickstart",
+            "ref": "e672",
+            "href": "/get-started/development-environment"
+          },
+          {
+            "index": 31,
+            "role": "link",
+            "name": "no-code options",
+            "ref": "e676",
+            "href": "/payments/no-code"
+          },
+          {
+            "index": 32,
+            "role": "link",
+            "name": "our partners",
+            "ref": "e677",
+            "href": "https://stripe.partners/"
+          },
+          {
+            "index": 33,
+            "role": "button",
+            "name": "Base URL",
+            "ref": "e683"
+          },
+          {
+            "index": 34,
+            "role": "button",
+            "name": "Ruby",
+            "ref": "e698"
+          },
+          {
+            "index": 35,
+            "role": "button",
+            "name": "Python",
+            "ref": "e703"
+          },
+          {
+            "index": 36,
+            "role": "button",
+            "name": "PHP",
+            "ref": "e709"
+          },
+          {
+            "index": 37,
+            "role": "button",
+            "name": "Java",
+            "ref": "e717"
+          },
+          {
+            "index": 38,
+            "role": "button",
+            "name": "Node.js",
+            "ref": "e726"
+          },
+          {
+            "index": 39,
+            "role": "button",
+            "name": "Go",
+            "ref": "e731"
+          },
+          {
+            "index": 40,
+            "role": "button",
+            "name": ".NET",
+            "ref": "e738"
+          },
+          {
+            "index": 41,
+            "role": "link",
+            "name": "client libraries",
+            "ref": "e759",
+            "href": "/libraries"
+          },
+          {
+            "index": 42,
+            "role": "link",
+            "name": "Authentication",
+            "ref": "e765",
+            "href": "/api/authentication"
+          },
+          {
+            "index": 43,
+            "role": "link",
+            "name": "API keys",
+            "ref": "e788",
+            "href": "/keys"
+          },
+          {
+            "index": 44,
+            "role": "link",
+            "name": "the Stripe Dashboard",
+            "ref": "e789",
+            "href": "https://dashboard.stripe.com/login?redirect=/apikeys"
+          },
+          {
+            "index": 45,
+            "role": "link",
+            "name": "restricted API key",
+            "ref": "e792",
+            "href": "/keys#create-restricted-api-key"
+          },
+          {
+            "index": 46,
+            "role": "link",
+            "name": "best practices",
+            "ref": "e796",
+            "href": "/keys-best-practices"
+          },
+          {
+            "index": 47,
+            "role": "link",
+            "name": "HTTPS",
+            "ref": "e798",
+            "href": "http://en.wikipedia.org/wiki/HTTP_Secure"
+          },
+          {
+            "index": 48,
+            "role": "button",
+            "name": "Server-side language",
+            "ref": "e818"
+          },
+          {
+            "index": 49,
+            "role": "button",
+            "name": "cURL",
+            "ref": "e822"
+          },
+          {
+            "index": 50,
+            "role": "button",
+            "name": "sk_test_BQokikJOvBiI2HlWgH4olfQ2 sk_test_BQokikJOvBiI2HlWgH4olfQ2",
+            "ref": "e838"
+          },
+          {
+            "index": 51,
+            "role": "link",
+            "name": "sign in",
+            "ref": "e847",
+            "href": "https://dashboard.stripe.com/login?redirect=https%3A%2F%2Fdocs.stripe.com%2Fapi%2Fauthentication"
+          },
+          {
+            "index": 52,
+            "role": "link",
+            "name": "Errors",
+            "ref": "e853",
+            "href": "/api/errors"
+          },
+          {
+            "index": 53,
+            "role": "link",
+            "name": "declined",
+            "ref": "e881",
+            "href": "/declines"
+          },
+          {
+            "index": 54,
+            "role": "link",
+            "name": "error code",
+            "ref": "e884",
+            "href": "/error-codes"
+          },
+          {
+            "index": 55,
+            "role": "link",
+            "name": "Error handling",
+            "ref": "e886",
+            "href": "/error-handling"
+          },
+          {
+            "index": 56,
+            "role": "button",
+            "name": "code nullable string",
+            "ref": "e901"
+          },
+          {
+            "index": 57,
+            "role": "button",
+            "name": "decline_code nullable string",
+            "ref": "e917"
+          },
+          {
+            "index": 58,
+            "role": "link",
+            "name": "card issuer’s reason for the decline",
+            "ref": "e930",
+            "href": "/declines#issuer-declines"
+          },
+          {
+            "index": 59,
+            "role": "button",
+            "name": "message nullable string",
+            "ref": "e934"
+          },
+          {
+            "index": 60,
+            "role": "button",
+            "name": "param nullable string",
+            "ref": "e949"
+          }
+        ],
+        "text": "API Reference\nAsk about this section\nCopy for LLM\nView as Markdown\nThe Stripe API is organized around REST. Our API has predictable resource-oriented URLs, accepts form-encoded request bodies, returns JSON-encoded responses, and uses standard HTTP response codes, authentication, and verbs.\nYou can use the Stripe API in sandboxes without affecting your live data or interacting with banking networks. The API key that you use to authenticate the request determines whether the request runs in live mode or in a sandbox. Sandboxes support all v2 APIs. Test mode sandboxes support some v2 APIs.\nThe Stripe API doesn’t support bulk updates. You can work on only one object per request.\nThe Stripe API differs for every account as we release new versions and tailor functionality. Log in to see docs with your test key and data.\nWas this section helpful?\nYes\nNo\nJust getting started?\nCheck out our development quickstart guide.\nNot a developer?\nUse Stripe’s no-code options or apps from our partners to get started with Stripe and to do more with your Stripe account—no code required.\nBASE URL\nhttps://api.stripe.com\nCLIENT LIBRARIES\nRuby\nPython\nPHP\nJava\nNode.js\nGo\n.NET\nBy default, the Stripe API Docs demonstrate using curl to interact with the API over HTTP. Select one of our official client libraries to see examples in code.\nAuthentication\nAsk about this section\nCopy for LLM\nView as Markdown\nThe Stripe API uses API keys to authenticate requests. You can view and manage your API keys in the Stripe Dashboard.\nTest mode secret keys start with sk_test_ and have unrestricted access to their sandboxes. In live mode, you configure a restricted API key (starts with rk_live_) with specific API permissions. Using a restricted API key with only a subset of API permissions limits the damage a bad actor could cause if they obtained the key. In both test mode and live mode, you can create as many restricted API keys as you need for different use cases or components of your application. We also create a live mode secret key (starts with sk_live_) that grants access to all Stripe API resources. To protect your business, use restricted API keys instead.\nYour API keys carry many privileges. Follow best practices to keep your keys safe. Don’t embed secret or restricted API keys in source code or client-side applications. Instead, use your server platform’s secrets vault to provide keys to your server-side applications. If your platform doesn’t offer a secrets vault, set your keys in environment variables.\nMake all API requests over HTTPS. Calls made over plain HTTP fail. API requests without authentication also fail.\nWas this section helpful?\nYes\nNo\nAUTHENTICATED REQUEST\nServer-side language\ncURL\ncurl https://api.stripe.com/v1/charges \\\n  -u sk_test_BQokikJOvBiI2HlWgH4olfQ2",
+        "jsGated": false,
+        "hasPrice": false
+      }
+    ],
+    "declaredDone": true,
+    "gaveUp": false,
+    "operated": [],
+    "failures": [],
+    "stepCount": 1,
+    "stealth": true,
+    "priceOnHome": false,
+    "handoffs": []
+  },
+  "verdict": {
+    "grade": "A",
+    "score": 100,
+    "milestones": [
+      "understood-offering",
+      "found-key-info",
+      "found-cta",
+      "completed-action"
+    ],
+    "blockers": [],
+    "steps": 1,
+    "summary": "An AI agent completed \"integrate the api\" in 1 step.",
+    "sessionId": "ip-10-0-10-9:f291200d-f1f3-4f10-9fd9-4d5161e62c1c:cmtkgry6v00njo801yp7b3ine:1788521179382.AFk62I9ZaveQrKtg72lxiA"
+  }
+}
