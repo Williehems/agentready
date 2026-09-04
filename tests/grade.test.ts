@@ -88,6 +88,18 @@ describe("grade: the happy path", () => {
     assert.match(grade(clean).summary, /completed "sign up"/i);
     assert.match(grade(clean).summary, /4 steps/);
   });
+
+  /**
+   * The fastest pass this product can report, and the sentence it used to mangle.
+   * Live on docs.stripe.com/api/authentication the card read "An AI agent
+   * completed "integrate the api" in 1 steps.", which is the best result on the
+   * board written so nobody would quote it.
+   */
+  it("counts a single step as one step", () => {
+    const v = grade({ ...clean, stepCount: 1 });
+    assert.match(v.summary, /in 1 step\./);
+    assert.ok(!/1 steps/.test(v.summary), v.summary);
+  });
 });
 
 describe("grade: hard blockers cap the result", () => {
@@ -597,6 +609,7 @@ describe("grade: milestones and letters", () => {
     assert.equal(v.grade, "C");
     assert.deepEqual(v.blockers, [], "nothing specific stopped it, it simply did not finish");
     assert.match(v.summary, /without hitting a specific blocker/);
+    assert.match(v.summary, /within 1 step,/, "the failure sentence counts in English too");
   });
 
   it("says how far the agent got when a blocker stopped it at the last step", () => {

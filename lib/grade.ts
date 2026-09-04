@@ -588,6 +588,18 @@ const END_STATE_WANTED: Record<ActionKind, string> = {
   contact: "no contact form holding a typed message",
 };
 
+/**
+ * "1 step", not "1 steps".
+ *
+ * The best result this product can report is a site an agent finishes with on its
+ * first move, and that is the one sentence the old template got wrong. Seen on
+ * docs.stripe.com/api/authentication: "An AI agent completed "integrate the api"
+ * in 1 steps." A grade nobody trusts the grammar of is a grade nobody quotes.
+ */
+function count(n: number, one: string, many = `${one}s`): string {
+  return `${n} ${n === 1 ? one : many}`;
+}
+
 function summarise(
   letter: Grade,
   t: Transcript,
@@ -617,13 +629,13 @@ function summarise(
   // above, or ended on the agent's own terms, and keeps its letter.
   if (cutShort) {
     const got = milestones.length
-      ? `It got as far as ${milestones.length} of 4 checkpoints in ${t.stepCount} steps`
-      : `It reached no checkpoint in ${t.stepCount} steps`;
+      ? `It got as far as ${milestones.length} of 4 checkpoints in ${count(t.stepCount, "step")}`
+      : `It reached no checkpoint in ${count(t.stepCount, "step")}`;
     return `No grade: our side stopped this run before it could finish (${t.abandoned}). ${got}, and whether it could have completed "${task}" was never put to the test.`;
   }
   if (milestones.includes("completed-action")) {
-    return `An AI agent completed "${task}" in ${t.stepCount} steps.${
-      blockers.length ? ` It worked, but it had to get past ${blockers.length} obstacle(s) on the way.` : ""
+    return `An AI agent completed "${task}" in ${count(t.stepCount, "step")}.${
+      blockers.length ? ` It worked, but it had to get past ${count(blockers.length, "obstacle")} on the way.` : ""
     }`;
   }
   const primary = blockers[0];
@@ -635,5 +647,5 @@ function summarise(
         : "It could not even read what you sell";
     return `An AI agent failed to ${task}. ${where}. Primary blocker: ${primary.blocker}.${disputed}`;
   }
-  return `An AI agent failed to ${task} within ${t.stepCount} steps, without hitting a specific blocker. Grade ${letter}.${disputed}`;
+  return `An AI agent failed to ${task} within ${count(t.stepCount, "step")}, without hitting a specific blocker. Grade ${letter}.${disputed}`;
 }

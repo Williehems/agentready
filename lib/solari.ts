@@ -190,10 +190,39 @@ export async function fetchReplayUrl(solari: Solari, sessionId: string): Promise
     return { url };
   } catch (err) {
     if (err instanceof SolariError) {
-      if (err.status === 404) {
+      const envelope = /exhausted \d+ attempts/.test(err.message) ? rootCause(err) : undefined;
+      const status = envelope?.status ?? err.status;
+
+      // Not uploaded yet is the ordinary answer for the first minutes, and it has
+      // to be recognised through the retry envelope as well as bare, or the run
+      // that finished fastest is the one told its recording is gone.
+      if (status === 404) {
         return { pending: true, reason: "the recording has not finished uploading yet" };
       }
-      return { reason: `${err.code ?? err.status}: ${err.message}` };
+
+      // A failure to reach Solari is not the same as a recording that does not
+      // exist, so the page keeps asking and the sentence says whose side it is.
+      //
+      // Said in words because the envelope carries neither code nor status of its
+      // own, which is the whole point of rootCause above. Measured on run
+      // mtmvbwgn-6pofvk, the first A this product ever gave: under the verdict,
+      // where the replay link belongs, the card read "No replay yet: undefined:
+      // Solari GET /sessions/ip-10-0-10-9%3A...%2Freplay-url: exhausted 2
+      // attempts." That is `${err.code ?? err.status}` resolving to undefined
+      // twice over, printed at the reader.
+      if (envelope) {
+        return {
+          pending: true,
+          reason: status
+            ? `Solari answered ${status} to every attempt, so this is their side and not a lost recording`
+            : `Solari could not be reached (${envelope.text})`,
+        };
+      }
+
+      const named = err.code ?? (status ? `HTTP ${status}` : undefined);
+      return {
+        reason: named ? `Solari refused the recording (${named}): ${err.message}` : err.message,
+      };
     }
     return { reason: err instanceof Error ? err.message : String(err) };
   }
