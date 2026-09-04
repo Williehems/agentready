@@ -353,6 +353,19 @@ const PRICE_RE =
   /(?:[$€£¥₦]|\bNGN\b|\bUSD\b|\bEUR\b|\bGBP\b|\bRs\.?)\s?\d[\d,.]*|\d[\d,.]*\s?(?:USD|EUR|GBP|NGN)\b/i;
 
 /**
+ * Code a developer could copy, as selectable text. Deliberately narrow: every
+ * alternative here is something ordinary English prose does not contain.
+ *
+ * `curl` alone is a word, so it has to be followed by a flag or a URL. `import`
+ * and `require` and `fetch` are all common verbs, so each is anchored on the
+ * punctuation that makes it a call. What is deliberately absent is anything that
+ * merely mentions code: "code example", "quickstart", "see the reference". A page
+ * that talks about a code sample has not shown one.
+ */
+const CODE_RE =
+  /curl\s+(?:-|https?:\/\/)|authorization:\s*bearer|\bimport\s*\{|\brequire\(\s*['"]|\bfetch\(\s*['"`]|(?:^|\s)-H\s+['"]/i;
+
+/**
  * Does this text carry a price a machine could read?
  *
  * Exported so the run can ask the same question of a page it did not walk through.
@@ -360,6 +373,17 @@ const PRICE_RE =
  */
 export function looksPriced(text: string): boolean {
   return PRICE_RE.test(text);
+}
+
+/**
+ * Does this text carry a call a developer could copy?
+ *
+ * The same shape as looksPriced and for the same reason, on the axis that decides
+ * whether an `integrate` run finished. Read against the whole page rather than
+ * the copy the model is sent: see Perception.hasCode.
+ */
+export function looksCoded(text: string): boolean {
+  return CODE_RE.test(text);
 }
 
 /**
@@ -772,6 +796,24 @@ export async function perceive(page: AgentPage, timeoutMs = PERCEIVE_MS): Promis
     // what our trimming hid is the one kind of wrong finding this cannot afford.
     // The same argument covers a price in a footer that prose() removes.
     hasPrice: looksPriced(zones.body),
+    // Measured on the whole page for exactly the reason above, one axis over, and
+    // put in before it was needed rather than after.
+    //
+    // The count that prompted it: of 31 perceptions taken since prose() started
+    // preferring content over sidebar, 28 were still at the 2800 cap, all of them
+    // on docs.stripe.com. On those pages the grader is reading a prefix and there
+    // is no telling what sits past it. The one stored run this changes is the ten
+    // step walk of docs.stripe.com/ and /development and /apis and /keys, which
+    // found the key half on every page and a call on none, and was graded C 60 for
+    // it; whether those pages carry a call below the cut is the question the
+    // trimmed copy cannot answer and this one can.
+    //
+    // Worth being exact about what it does not fix, since the same measurement
+    // said so. The other five capped C 60 runs had `curl ` quoted in their trimmed
+    // text, so the grader saw the call, and they still scored 60 because our own
+    // free tier ran out of daily tokens mid run and nobody ever said done. Those
+    // letters are withheld on the board already. Truncation was not their problem.
+    hasCode: looksCoded(zones.body) || undefined,
   };
 }
 

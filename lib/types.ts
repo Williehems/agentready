@@ -155,4 +155,13 @@ export interface Perception {
   jsGated: boolean;
   /** A currency amount was present as selectable text, not baked into an image. */
   hasPrice: boolean;
+  /**
+   * A copyable call was present on the page, measured against the whole document
+   * rather than the trimmed `text` above.
+   *
+   * Absent rather than false when there was none, so the runs recorded before this
+   * existed are distinguishable from pages that genuinely had no code: on those,
+   * the grader falls back to reading the trimmed text as it always did.
+   */
+  hasCode?: true;
 }

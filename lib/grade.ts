@@ -347,11 +347,25 @@ export function endStateSeen(t: Transcript): string | undefined {
       // The call, not the install. An `npm install` on the page says a developer
       // could get started; it does not show the API being used, and this is the
       // check that decides whether 40 points for finishing are paid out.
+      //
+      // Two ways of having seen it, because the trimmed text is not the page. A
+      // sign quoted out of `everywhere` is a call the model was shown; `hasCode`
+      // is a call the page carried, read off the whole document before the text
+      // was trimmed. 28 of the 31 perceptions taken since the sidebar fix are
+      // still at the 2800 cap, every one of them on docs.stripe.com, so on those
+      // pages the first route answers about a prefix and the second about a page.
+      //
+      // The second route cannot invent a quote, and it is not given one. A run
+      // credited this way says "a code example on the page" instead, because the
+      // honest form of that sentence is the one that does not pretend to have the
+      // line in hand.
       const code = sign(everywhere, CALL_SIGNS);
+      const carried = t.perceptions.some((p) => p.hasCode);
       const key = sign(everywhere, KEY_ROUTE_SIGNS);
-      return code && key
-        ? `a code example ("${code.trim()}") and a route to a key ("${key}")`
-        : undefined;
+      if (!key || !(code || carried)) return undefined;
+      return `${
+        code ? `a code example ("${code.trim()}")` : "a code example on the page"
+      } and a route to a key ("${key}")`;
     }
     case "purchase": {
       const step = sign(here, CHECKOUT_SIGNS);
@@ -547,7 +561,7 @@ export function grade(t: Transcript): Verdict {
   // is credited for them whether or not the URL we picked happened to pass one.
   if (
     priceSeen ||
-    (t.action === "integrate" && integrateKeyInfo(text)) ||
+    (t.action === "integrate" && (integrateKeyInfo(text) || t.perceptions.some((p) => p.hasCode))) ||
     (t.action === "contact" && /@|contact/.test(text) && !cta.deadEndOnly && !handoff) ||
     (t.action === "book" && /\b(mon|tue|wed|thu|fri|sat|sun)\w*\b|\bam\b|\bpm\b|available/.test(text))
   ) {

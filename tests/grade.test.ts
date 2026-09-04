@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { grade, type Transcript } from "../lib/grade";
+import { endStateSeen, grade, type Transcript } from "../lib/grade";
 import type { ActionKind, Blocker, Perception, PerceivedElement } from "../lib/types";
 
 /** Enough prose to clear the understood-offering threshold (400 chars). */
@@ -739,6 +739,84 @@ describe("grade: a claim of having finished", () => {
       declaredDone: true,
     });
     assert.ok(grade(t).milestones.includes("completed-action"), "the run this product's first A came from");
+  });
+
+  /*
+   * The other half of the same question: what happens when the page showed a call
+   * and we did not pass it on. `text` here is what a perception carries, and it is
+   * trimmed to MAX_TEXT before it ever reaches the model or this function. Measured
+   * across the runs recorded since the sidebar fix: 28 of 31 perceptions are still
+   * at that cap, all of them on docs.stripe.com, which makes every judgement about
+   * those pages a judgement about a prefix. `hasCode` is read off the untrimmed
+   * document so the answer to "did this site show a developer a call" stops
+   * depending on how many characters our prompt budget could afford.
+   */
+  it("credits a call the page carried but our trimming cut off", () => {
+    const t = transcript({
+      action: "integrate",
+      perceptions: [
+        page({
+          url: "https://docs.stripe.com/api/authentication",
+          title: "Authentication",
+          // No call sign anywhere in the prose the model was shown.
+          text: `${PROSE}\nAuthenticate with your secret key.`,
+          hasCode: true,
+        }),
+      ],
+      declaredDone: true,
+    });
+    const v = grade(t);
+    assert.ok(v.milestones.includes("completed-action"));
+    // The proof string is what a refusal quotes, so it is read off directly here:
+    // it has to name the page rather than quote a sign, because there was no sign
+    // in the text to quote.
+    assert.match(endStateSeen(t)!, /a code example on the page/);
+    assert.equal(v.grade, "A");
+  });
+
+  it("still needs the key half, so a page of code alone does not finish the run", () => {
+    const t = transcript({
+      action: "integrate",
+      perceptions: [
+        page({
+          url: "https://docs.stripe.com/get-started",
+          title: "Get started",
+          text: `${PROSE}\nRead on for the concepts.`,
+          hasCode: true,
+        }),
+      ],
+      declaredDone: true,
+    });
+    const v = grade(t);
+    assert.ok(!v.milestones.includes("completed-action"));
+    assert.match(v.summary, /route to an API key/);
+  });
+
+  it("credits the key info an integrate run came for from the untrimmed page too", () => {
+    // Nothing in the trimmed text: no call, no install, no named route to a key.
+    // Before hasCode existed this page was worth 35, and the 20 points it was
+    // missing were ours to give, not the site's to earn back.
+    const cut = page({ text: PROSE, hasCode: true });
+    assert.ok(grade(transcript({ action: "integrate", perceptions: [cut] })).milestones.includes("found-key-info"));
+  });
+
+  it("leaves a run recorded before hasCode existed exactly where it was", () => {
+    // The 33 stored runs and both shipped examples carry no hasCode at all, and
+    // absent must keep meaning "we did not measure" rather than "there was none".
+    const t = transcript({
+      action: "integrate",
+      perceptions: [
+        page({
+          url: "https://docs.stripe.com/api/authentication",
+          title: "Authentication",
+          text: `${PROSE}\nAuthenticate with your secret key.`,
+        }),
+      ],
+      declaredDone: true,
+    });
+    const v = grade(t);
+    assert.ok(!v.milestones.includes("completed-action"), "no call in the text, and none reported off the page");
+    assert.match(v.summary, /code example calling the API/);
   });
 
   it("takes the payment step as the end of a purchase, by its fields or by its URL", () => {

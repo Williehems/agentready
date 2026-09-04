@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import {
   capped,
   fingerprint,
+  looksCoded,
   marks,
   modalIsOpen,
   parseAriaSnapshot,
@@ -1102,5 +1103,38 @@ describe("marks: the page as a list of things that can be told apart", () => {
 
   it("is what fingerprint joins, so the two can never drift apart", () => {
     assert.ok(fingerprint(p).endsWith(marks(p).join("|")));
+  });
+});
+
+describe("looksCoded: a call the reader could copy", () => {
+  it("reads the shapes a docs page shows code in", () => {
+    for (const text of [
+      "curl -X POST https://api.stripe.com/v1/charges",
+      "curl https://api.example.com/v1/ping",
+      'Authorization: Bearer sk_test_123',
+      'import { Resend } from "resend";',
+      "const stripe = require('stripe')(key);",
+      'await fetch("https://api.example.com")',
+      '  -H "Content-Type: application/json"',
+    ]) {
+      assert.equal(looksCoded(text), true, text);
+    }
+  });
+
+  it("is not fooled by prose about code", () => {
+    // The whole point of measuring this against the untrimmed page is that the
+    // answer gets trusted, so a page that only talks about integrating must not
+    // pass. Every one of these appeared in the text of a real docs page we walked.
+    for (const text of [
+      "See the code example in our API reference to get started.",
+      "Install the SDK, then import it into your project.",
+      "Copy your API key from the Dashboard and curl away.",
+      "Our quickstart shows you how to make your first request.",
+      "You can fetch the balance once you have authenticated.",
+      "npm install stripe",
+      "",
+    ]) {
+      assert.equal(looksCoded(text), false, text);
+    }
   });
 });
