@@ -218,7 +218,11 @@ export default async function RunPage({ params }: { params: { id: string } }) {
         {run.shots?.length ? (
           <Panel
             title={`What it saw (${run.shots.length})`}
-            note="Screenshots from the live run. These live on the machine that ran it and are not committed."
+            note={
+              run.example
+                ? "Screenshots from the run, committed with it so this page is whole on a fresh clone."
+                : "Screenshots from the live run. These live on the machine that ran it and are not committed."
+            }
           >
             <div className="grid gap-3 p-4 sm:grid-cols-2">
               {run.shots.map((src) => (
@@ -238,8 +242,11 @@ export default async function RunPage({ params }: { params: { id: string } }) {
         {run.example ? (
           <p className="mt-6 text-[11px] leading-relaxed text-dim">
             This run ships with the repository so the page has something real to show on a fresh
-            clone. Its screenshots do not: those stay on the machine that ran it. The replay is
-            fetched live from Solari and needs a key in this environment.
+            clone.{" "}
+            {run.shots?.length
+              ? "Its screenshots ship with it."
+              : "Its screenshots do not: those stay on the machine that ran it."}{" "}
+            The replay is fetched live from Solari and needs a key in this environment.
           </p>
         ) : null}
 

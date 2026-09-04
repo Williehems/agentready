@@ -1,0 +1,750 @@
+{
+  "runId": "mtng1w8r-xobh91",
+  "url": "https://escape-house-spa.netlify.app/",
+  "action": "book",
+  "spend": {
+    "calls": 8,
+    "promptTokens": 17591,
+    "completionTokens": 662,
+    "heldMs": 0,
+    "remainingTokens": 1224,
+    "limitTokens": 8000
+  },
+  "steps": [
+    {
+      "index": 1,
+      "action": "click",
+      "target": "Book Now",
+      "reasoning": "click Book Now to open booking form",
+      "ok": true,
+      "screenshot": "/runs/mtng1w8r-xobh91/00.jpg",
+      "url": "https://escape-house-spa.netlify.app/",
+      "elementCount": 37,
+      "at": 1788556024743
+    },
+    {
+      "index": 2,
+      "action": "click",
+      "target": "01 Body Massage",
+      "reasoning": "click the Body Massage button to start booking",
+      "ok": true,
+      "screenshot": "/runs/mtng1w8r-xobh91/01.jpg",
+      "url": "https://escape-house-spa.netlify.app/",
+      "elementCount": 8,
+      "at": 1788556043389
+    },
+    {
+      "index": 3,
+      "action": "click",
+      "target": "Continue",
+      "reasoning": "click Continue to open booking form",
+      "ok": true,
+      "screenshot": "/runs/mtng1w8r-xobh91/02.jpg",
+      "url": "https://escape-house-spa.netlify.app/",
+      "elementCount": 8,
+      "at": 1788556063022
+    },
+    {
+      "index": 4,
+      "action": "type",
+      "target": "Preferred Date",
+      "value": "2026-09-10",
+      "reasoning": "Enter a future preferred date",
+      "ok": true,
+      "screenshot": "/runs/mtng1w8r-xobh91/03.jpg",
+      "url": "https://escape-house-spa.netlify.app/",
+      "elementCount": 5,
+      "at": 1788556068435
+    },
+    {
+      "index": 5,
+      "action": "click",
+      "target": "Continue",
+      "reasoning": "click Continue to submit the booking",
+      "ok": true,
+      "screenshot": "/runs/mtng1w8r-xobh91/04.jpg",
+      "url": "https://escape-house-spa.netlify.app/",
+      "elementCount": 5,
+      "at": 1788556080180
+    },
+    {
+      "index": 6,
+      "action": "type",
+      "target": "Your Name",
+      "value": "Alex Morgan",
+      "reasoning": "fill name field",
+      "ok": true,
+      "screenshot": "/runs/mtng1w8r-xobh91/05.jpg",
+      "url": "https://escape-house-spa.netlify.app/",
+      "elementCount": 6,
+      "at": 1788556089690
+    },
+    {
+      "index": 7,
+      "action": "type",
+      "target": "Phone Number",
+      "value": "+1 415 555 0132",
+      "reasoning": "fill phone number",
+      "ok": true,
+      "screenshot": "/runs/mtng1w8r-xobh91/06.jpg",
+      "url": "https://escape-house-spa.netlify.app/",
+      "elementCount": 6,
+      "at": 1788556094343
+    },
+    {
+      "index": 8,
+      "action": "click",
+      "target": "Send booking via WhatsApp",
+      "reasoning": "Submit the booking via WhatsApp button",
+      "ok": false,
+      "error": "button \"Send booking via WhatsApp\" did not accept a click within 10s",
+      "screenshot": "/runs/mtng1w8r-xobh91/07.jpg",
+      "url": "https://escape-house-spa.netlify.app/",
+      "elementCount": 6,
+      "at": 1788556111881
+    }
+  ],
+  "transcript": {
+    "action": "book",
+    "startUrl": "https://escape-house-spa.netlify.app/",
+    "perceptions": [
+      {
+        "url": "https://escape-house-spa.netlify.app/",
+        "title": "Escape House Spa | Luxury Wellness, Maitama Abuja",
+        "elements": [
+          {
+            "index": 1,
+            "role": "link",
+            "name": "Skip to main content",
+            "ref": "e2",
+            "href": "\"#main\""
+          },
+          {
+            "index": 2,
+            "role": "link",
+            "name": "Escape House Spa, go to top",
+            "ref": "e4",
+            "href": "\"#\""
+          },
+          {
+            "index": 3,
+            "role": "link",
+            "name": "Rituals",
+            "ref": "e7",
+            "href": "\"#rituals\""
+          },
+          {
+            "index": 4,
+            "role": "link",
+            "name": "The Spaces",
+            "ref": "e9",
+            "href": "\"#spaces\""
+          },
+          {
+            "index": 5,
+            "role": "link",
+            "name": "Our Story",
+            "ref": "e11",
+            "href": "\"#story\""
+          },
+          {
+            "index": 6,
+            "role": "link",
+            "name": "Reviews",
+            "ref": "e13",
+            "href": "\"#reviews\""
+          },
+          {
+            "index": 7,
+            "role": "link",
+            "name": "Find Us",
+            "ref": "e15",
+            "href": "\"#location\""
+          },
+          {
+            "index": 8,
+            "role": "button",
+            "name": "Book Now",
+            "ref": "e17"
+          },
+          {
+            "index": 9,
+            "role": "button",
+            "name": "Begin Your Escape",
+            "ref": "e35"
+          },
+          {
+            "index": 10,
+            "role": "link",
+            "name": "Explore the rituals",
+            "ref": "e38",
+            "href": "\"#rituals\""
+          },
+          {
+            "index": 11,
+            "role": "button",
+            "name": "Book this ritual",
+            "ref": "e90"
+          },
+          {
+            "index": 12,
+            "role": "button",
+            "name": "Body Massage",
+            "ref": "e174"
+          },
+          {
+            "index": 13,
+            "role": "button",
+            "name": "Spa interior",
+            "ref": "e178"
+          },
+          {
+            "index": 14,
+            "role": "button",
+            "name": "Relaxation",
+            "ref": "e180"
+          },
+          {
+            "index": 15,
+            "role": "button",
+            "name": "Luxury care",
+            "ref": "e182"
+          },
+          {
+            "index": 16,
+            "role": "button",
+            "name": "Treatments",
+            "ref": "e184"
+          },
+          {
+            "index": 17,
+            "role": "button",
+            "name": "Special events",
+            "ref": "e186"
+          },
+          {
+            "index": 18,
+            "role": "button",
+            "name": "Review 1",
+            "ref": "e240"
+          },
+          {
+            "index": 19,
+            "role": "button",
+            "name": "Review 2",
+            "ref": "e241"
+          },
+          {
+            "index": 20,
+            "role": "button",
+            "name": "Review 3",
+            "ref": "e242"
+          },
+          {
+            "index": 21,
+            "role": "link",
+            "name": "Read all reviews on TripAdvisor (4.5 stars)",
+            "ref": "e244",
+            "href": "https://www.tripadvisor.com/Attraction_Review-g293825-d24950844-Reviews-Escape_House-Abuja_Federal_Capital_Territory.html"
+          },
+          {
+            "index": 22,
+            "role": "link",
+            "name": "Open in Google Maps",
+            "ref": "e253",
+            "href": "https://maps.google.com/?cid=3588225163450769542"
+          },
+          {
+            "index": 23,
+            "role": "link",
+            "name": "+234 809 922 4450",
+            "ref": "e278",
+            "href": "tel:+2348099224450"
+          },
+          {
+            "index": 24,
+            "role": "link",
+            "name": "Chat with us",
+            "ref": "e285",
+            "href": "https://wa.me/2348099224450"
+          },
+          {
+            "index": 25,
+            "role": "link",
+            "name": "Call Us",
+            "ref": "e298",
+            "href": "tel:+2348099224450"
+          },
+          {
+            "index": 26,
+            "role": "link",
+            "name": "Escape House",
+            "ref": "e303",
+            "href": "\"#\""
+          },
+          {
+            "index": 27,
+            "role": "link",
+            "name": "Escape House Spa on Instagram",
+            "ref": "e306",
+            "href": "https://www.instagram.com/escapehouse_/"
+          },
+          {
+            "index": 28,
+            "role": "link",
+            "name": "Escape House Spa on Facebook",
+            "ref": "e309",
+            "href": "https://www.facebook.com/p/Escapehouse-100063598119861/"
+          },
+          {
+            "index": 29,
+            "role": "link",
+            "name": "Contact Escape House Spa on WhatsApp",
+            "ref": "e312",
+            "href": "https://wa.me/2348099224450"
+          },
+          {
+            "index": 30,
+            "role": "button",
+            "name": "Close booking"
+          },
+          {
+            "index": 31,
+            "role": "button",
+            "name": "01 Body Massage"
+          },
+          {
+            "index": 32,
+            "role": "button",
+            "name": "02 Thai / Bali"
+          },
+          {
+            "index": 33,
+            "role": "button",
+            "name": "03 Facial"
+          },
+          {
+            "index": 34,
+            "role": "button",
+            "name": "04 Mani / Pedi"
+          },
+          {
+            "index": 35,
+            "role": "button",
+            "name": "05 Kids Spa"
+          },
+          {
+            "index": 36,
+            "role": "button",
+            "name": "06 Couples"
+          },
+          {
+            "index": 37,
+            "role": "button",
+            "name": "Continue"
+          }
+        ],
+        "text": "SCROLL\nMAITAMA, ABUJA\nStep out of\nthe noise.\nInto stillness.\nA sanctuary of Thai, Balinese and African body therapies in the heart of Abuja's most prestigious district. Cross the threshold and let the city dissolve.\nBEGIN YOUR ESCAPE\nEXPLORE THE RITUALS\n\"Where the city's energy dissolves the moment you step inside.\"\n4.5\nON TRIPADVISOR\n18K+\nINSTAGRAM FOLLOWERS\n10AM–2AM\nOPEN EVERY DAY\nUNISEX · MEN, WOMEN & CHILDREN\nTHE RITUALS\nTreatments crafted for deep restoration\nEvery session performed by therapists trained in Thai, Balinese and African wellness traditions. Drag through, or simply scroll.\n01 — Therapeutic\nBody Massage\nFull-body therapeutic massage targeting deep muscle tension, restoring circulation and releasing the weight of the day. Pressure tailored to your body.\nFROM ₦15,000 BOOK THIS RITUAL\n02 — Ancient Asia\nThai & Bali\nAcupressure, passive stretching and rhythmic compression drawn from centuries-old Asian practice, realigning your energy and dissolving stress at the root.\nFROM ₦20,000 BOOK THIS RITUAL\n03 — Radiance\nFacial Treatment\nDeep-cleanse and glow facials with professional-grade products, targeting repair, hydration and a luminous, rested complexion.\nFROM ₦12,000 BOOK THIS RITUAL\n04 — Detail\nMani & Pedi\nLuxurious nail and foot care, from classic grooming to spa-grade treatments with scrubs, soaks and impeccable finishing.\nFROM ₦8,000 BOOK THIS RITUAL\n05 — Together\nCouples Escape\nSide-by-side relaxation designed for two. Perfect for anniversaries, celebrations, or simply unwinding together away from the world.\nFROM ₦40,000 BOOK THIS RITUAL\nTHE SPACES\nRooms built for letting go\nEvery corner of Escape House was designed with one intention: to give you a complete, uninterrupted escape.\nTreatment Rooms\nPrivate, dimly-lit and warm. Soft linen, low light and silence, the moment the door closes the city stops existing.\nThe Lounge\nArrive early, leave late. A quiet space to settle your breath before, and hold onto the calm after.\nCouples Suite\nTwo beds, one room, shared stillness. Designed for celebrations and slow afternoons together.\nTHE ATMOSPHERE\nA glimpse inside\nBODY MASSAGE\n4.5\nSTARS\nOUR STORY\nA sanctuary in the heart of Maitama\nNestled in Abuja's most prestigious district, Escape House began with a single belief: that peace should not be a luxury reserved for travel. The moment you step inside, the city's energy dissolves.\nOur therapists are trained in Thai and Balinese techniques, bringing authentic Asian wellness traditions to Nigeria. Every session is tailored, every detail considered, every visit a complete reset.\nOpen daily from 10 AM to 2 AM, because your peace should not have a curfew.\n18K+\nINSTAGRAM\n16 hrs\nOPEN DAILY\nUnisex\nFOR EVERYONE\nGUEST REVIEWS\nIn their own words",
+        "jsGated": false,
+        "hasPrice": true
+      },
+      {
+        "url": "https://escape-house-spa.netlify.app/",
+        "title": "Escape House Spa | Luxury Wellness, Maitama Abuja",
+        "elements": [
+          {
+            "index": 1,
+            "role": "button",
+            "name": "Close booking",
+            "ref": "e333"
+          },
+          {
+            "index": 2,
+            "role": "button",
+            "name": "01 Body Massage",
+            "ref": "e345"
+          },
+          {
+            "index": 3,
+            "role": "button",
+            "name": "02 Thai / Bali",
+            "ref": "e347"
+          },
+          {
+            "index": 4,
+            "role": "button",
+            "name": "03 Facial",
+            "ref": "e349"
+          },
+          {
+            "index": 5,
+            "role": "button",
+            "name": "04 Mani / Pedi",
+            "ref": "e351"
+          },
+          {
+            "index": 6,
+            "role": "button",
+            "name": "05 Kids Spa",
+            "ref": "e353"
+          },
+          {
+            "index": 7,
+            "role": "button",
+            "name": "06 Couples",
+            "ref": "e355"
+          },
+          {
+            "index": 8,
+            "role": "button",
+            "name": "Continue",
+            "ref": "e358"
+          }
+        ],
+        "text": "SCROLL\nMAITAMA, ABUJA\nStep out of\nthe noise.\nInto stillness.\nA sanctuary of Thai, Balinese and African body therapies in the heart of Abuja's most prestigious district. Cross the threshold and let the city dissolve.\nBEGIN YOUR ESCAPE\nEXPLORE THE RITUALS\n\"Where the city's energy dissolves the moment you step inside.\"\n4.5\nON TRIPADVISOR\n18K+\nINSTAGRAM FOLLOWERS\n10AM–2AM\nOPEN EVERY DAY\nUNISEX · MEN, WOMEN & CHILDREN\nTHE RITUALS\nTreatments crafted for deep restoration\nEvery session performed by therapists trained in Thai, Balinese and African wellness traditions. Drag through, or simply scroll.\n01 — Therapeutic\nBody Massage\nFull-body therapeutic massage targeting deep muscle tension, restoring circulation and releasing the weight of the day. Pressure tailored to your body.\nFROM ₦15,000 BOOK THIS RITUAL\n02 — Ancient Asia\nThai & Bali\nAcupressure, passive stretching and rhythmic compression drawn from centuries-old Asian practice, realigning your energy and dissolving stress at the root.\nFROM ₦20,000 BOOK THIS RITUAL\n03 — Radiance\nFacial Treatment\nDeep-cleanse and glow facials with professional-grade products, targeting repair, hydration and a luminous, rested complexion.\nFROM ₦12,000 BOOK THIS RITUAL\n04 — Detail\nMani & Pedi\nLuxurious nail and foot care, from classic grooming to spa-grade treatments with scrubs, soaks and impeccable finishing.\nFROM ₦8,000 BOOK THIS RITUAL\n05 — Together\nCouples Escape\nSide-by-side relaxation designed for two. Perfect for anniversaries, celebrations, or simply unwinding together away from the world.\nFROM ₦40,000 BOOK THIS RITUAL\nTHE SPACES\nRooms built for letting go\nEvery corner of Escape House was designed with one intention: to give you a complete, uninterrupted escape.\nTreatment Rooms\nPrivate, dimly-lit and warm. Soft linen, low light and silence, the moment the door closes the city stops existing.\nThe Lounge\nArrive early, leave late. A quiet space to settle your breath before, and hold onto the calm after.\nCouples Suite\nTwo beds, one room, shared stillness. Designed for celebrations and slow afternoons together.\nTHE ATMOSPHERE\nA glimpse inside\nBODY MASSAGE\n4.5\nSTARS\nOUR STORY\nA sanctuary in the heart of Maitama\nNestled in Abuja's most prestigious district, Escape House began with a single belief: that peace should not be a luxury reserved for travel. The moment you step inside, the city's energy dissolves.\nOur therapists are trained in Thai and Balinese techniques, bringing authentic Asian wellness traditions to Nigeria. Every session is tailored, every detail considered, every visit a complete reset.\nOpen daily from 10 AM to 2 AM, because your peace should not have a curfew.\n18K+\nINSTAGRAM\n16 hrs\nOPEN DAILY\nUnisex\nFOR EVERYONE\nGUEST REVIEWS\nIn their own words",
+        "jsGated": false,
+        "hasPrice": true
+      },
+      {
+        "url": "https://escape-house-spa.netlify.app/",
+        "title": "Escape House Spa | Luxury Wellness, Maitama Abuja",
+        "elements": [
+          {
+            "index": 1,
+            "role": "button",
+            "name": "Close booking",
+            "ref": "e333"
+          },
+          {
+            "index": 2,
+            "role": "button",
+            "name": "01 Body Massage",
+            "ref": "e345"
+          },
+          {
+            "index": 3,
+            "role": "button",
+            "name": "02 Thai / Bali",
+            "ref": "e347"
+          },
+          {
+            "index": 4,
+            "role": "button",
+            "name": "03 Facial",
+            "ref": "e349"
+          },
+          {
+            "index": 5,
+            "role": "button",
+            "name": "04 Mani / Pedi",
+            "ref": "e351"
+          },
+          {
+            "index": 6,
+            "role": "button",
+            "name": "05 Kids Spa",
+            "ref": "e353"
+          },
+          {
+            "index": 7,
+            "role": "button",
+            "name": "06 Couples",
+            "ref": "e355"
+          },
+          {
+            "index": 8,
+            "role": "button",
+            "name": "Continue",
+            "ref": "e358"
+          }
+        ],
+        "text": "SCROLL\nMAITAMA, ABUJA\nStep out of\nthe noise.\nInto stillness.\nA sanctuary of Thai, Balinese and African body therapies in the heart of Abuja's most prestigious district. Cross the threshold and let the city dissolve.\nBEGIN YOUR ESCAPE\nEXPLORE THE RITUALS\n\"Where the city's energy dissolves the moment you step inside.\"\n4.5\nON TRIPADVISOR\n18K+\nINSTAGRAM FOLLOWERS\n10AM–2AM\nOPEN EVERY DAY\nUNISEX · MEN, WOMEN & CHILDREN\nTHE RITUALS\nTreatments crafted for deep restoration\nEvery session performed by therapists trained in Thai, Balinese and African wellness traditions. Drag through, or simply scroll.\n01 — Therapeutic\nBody Massage\nFull-body therapeutic massage targeting deep muscle tension, restoring circulation and releasing the weight of the day. Pressure tailored to your body.\nFROM ₦15,000 BOOK THIS RITUAL\n02 — Ancient Asia\nThai & Bali\nAcupressure, passive stretching and rhythmic compression drawn from centuries-old Asian practice, realigning your energy and dissolving stress at the root.\nFROM ₦20,000 BOOK THIS RITUAL\n03 — Radiance\nFacial Treatment\nDeep-cleanse and glow facials with professional-grade products, targeting repair, hydration and a luminous, rested complexion.\nFROM ₦12,000 BOOK THIS RITUAL\n04 — Detail\nMani & Pedi\nLuxurious nail and foot care, from classic grooming to spa-grade treatments with scrubs, soaks and impeccable finishing.\nFROM ₦8,000 BOOK THIS RITUAL\n05 — Together\nCouples Escape\nSide-by-side relaxation designed for two. Perfect for anniversaries, celebrations, or simply unwinding together away from the world.\nFROM ₦40,000 BOOK THIS RITUAL\nTHE SPACES\nRooms built for letting go\nEvery corner of Escape House was designed with one intention: to give you a complete, uninterrupted escape.\nTreatment Rooms\nPrivate, dimly-lit and warm. Soft linen, low light and silence, the moment the door closes the city stops existing.\nThe Lounge\nArrive early, leave late. A quiet space to settle your breath before, and hold onto the calm after.\nCouples Suite\nTwo beds, one room, shared stillness. Designed for celebrations and slow afternoons together.\nTHE ATMOSPHERE\nA glimpse inside\nBODY MASSAGE\n4.5\nSTARS\nOUR STORY\nA sanctuary in the heart of Maitama\nNestled in Abuja's most prestigious district, Escape House began with a single belief: that peace should not be a luxury reserved for travel. The moment you step inside, the city's energy dissolves.\nOur therapists are trained in Thai and Balinese techniques, bringing authentic Asian wellness traditions to Nigeria. Every session is tailored, every detail considered, every visit a complete reset.\nOpen daily from 10 AM to 2 AM, because your peace should not have a curfew.\n18K+\nINSTAGRAM\n16 hrs\nOPEN DAILY\nUnisex\nFOR EVERYONE\nGUEST REVIEWS\nIn their own words",
+        "jsGated": false,
+        "hasPrice": true
+      },
+      {
+        "url": "https://escape-house-spa.netlify.app/",
+        "title": "Escape House Spa | Luxury Wellness, Maitama Abuja",
+        "elements": [
+          {
+            "index": 1,
+            "role": "button",
+            "name": "Close booking",
+            "ref": "e333"
+          },
+          {
+            "index": 2,
+            "role": "textbox",
+            "name": "Preferred Date",
+            "ref": "e381"
+          },
+          {
+            "index": 3,
+            "role": "combobox",
+            "name": "Preferred Time",
+            "ref": "e385",
+            "options": [
+              "Any time",
+              "10:00 AM",
+              "11:00 AM",
+              "12:00 PM",
+              "1:00 PM",
+              "2:00 PM",
+              "3:00 PM",
+              "4:00 PM",
+              "5:00 PM",
+              "6:00 PM",
+              "7:00 PM",
+              "8:00 PM"
+            ],
+            "value": "Any time"
+          },
+          {
+            "index": 4,
+            "role": "button",
+            "name": "Back",
+            "ref": "e388"
+          },
+          {
+            "index": 5,
+            "role": "button",
+            "name": "Continue",
+            "ref": "e391"
+          }
+        ],
+        "text": "SCROLL\nMAITAMA, ABUJA\nStep out of\nthe noise.\nInto stillness.\nA sanctuary of Thai, Balinese and African body therapies in the heart of Abuja's most prestigious district. Cross the threshold and let the city dissolve.\nBEGIN YOUR ESCAPE\nEXPLORE THE RITUALS\n\"Where the city's energy dissolves the moment you step inside.\"\n4.5\nON TRIPADVISOR\n18K+\nINSTAGRAM FOLLOWERS\n10AM–2AM\nOPEN EVERY DAY\nUNISEX · MEN, WOMEN & CHILDREN\nTHE RITUALS\nTreatments crafted for deep restoration\nEvery session performed by therapists trained in Thai, Balinese and African wellness traditions. Drag through, or simply scroll.\n01 — Therapeutic\nBody Massage\nFull-body therapeutic massage targeting deep muscle tension, restoring circulation and releasing the weight of the day. Pressure tailored to your body.\nFROM ₦15,000 BOOK THIS RITUAL\n02 — Ancient Asia\nThai & Bali\nAcupressure, passive stretching and rhythmic compression drawn from centuries-old Asian practice, realigning your energy and dissolving stress at the root.\nFROM ₦20,000 BOOK THIS RITUAL\n03 — Radiance\nFacial Treatment\nDeep-cleanse and glow facials with professional-grade products, targeting repair, hydration and a luminous, rested complexion.\nFROM ₦12,000 BOOK THIS RITUAL\n04 — Detail\nMani & Pedi\nLuxurious nail and foot care, from classic grooming to spa-grade treatments with scrubs, soaks and impeccable finishing.\nFROM ₦8,000 BOOK THIS RITUAL\n05 — Together\nCouples Escape\nSide-by-side relaxation designed for two. Perfect for anniversaries, celebrations, or simply unwinding together away from the world.\nFROM ₦40,000 BOOK THIS RITUAL\nTHE SPACES\nRooms built for letting go\nEvery corner of Escape House was designed with one intention: to give you a complete, uninterrupted escape.\nTreatment Rooms\nPrivate, dimly-lit and warm. Soft linen, low light and silence, the moment the door closes the city stops existing.\nThe Lounge\nArrive early, leave late. A quiet space to settle your breath before, and hold onto the calm after.\nCouples Suite\nTwo beds, one room, shared stillness. Designed for celebrations and slow afternoons together.\nTHE ATMOSPHERE\nA glimpse inside\nBODY MASSAGE\n4.5\nSTARS\nOUR STORY\nA sanctuary in the heart of Maitama\nNestled in Abuja's most prestigious district, Escape House began with a single belief: that peace should not be a luxury reserved for travel. The moment you step inside, the city's energy dissolves.\nOur therapists are trained in Thai and Balinese techniques, bringing authentic Asian wellness traditions to Nigeria. Every session is tailored, every detail considered, every visit a complete reset.\nOpen daily from 10 AM to 2 AM, because your peace should not have a curfew.\n18K+\nINSTAGRAM\n16 hrs\nOPEN DAILY\nUnisex\nFOR EVERYONE\nGUEST REVIEWS\nIn their own words",
+        "jsGated": false,
+        "hasPrice": true
+      },
+      {
+        "url": "https://escape-house-spa.netlify.app/",
+        "title": "Escape House Spa | Luxury Wellness, Maitama Abuja",
+        "elements": [
+          {
+            "index": 1,
+            "role": "button",
+            "name": "Close booking",
+            "ref": "e333"
+          },
+          {
+            "index": 2,
+            "role": "textbox",
+            "name": "Preferred Date",
+            "ref": "e381",
+            "value": "2026-09-10"
+          },
+          {
+            "index": 3,
+            "role": "combobox",
+            "name": "Preferred Time",
+            "ref": "e385",
+            "options": [
+              "Any time",
+              "10:00 AM",
+              "11:00 AM",
+              "12:00 PM",
+              "1:00 PM",
+              "2:00 PM",
+              "3:00 PM",
+              "4:00 PM",
+              "5:00 PM",
+              "6:00 PM",
+              "7:00 PM",
+              "8:00 PM"
+            ],
+            "value": "Any time"
+          },
+          {
+            "index": 4,
+            "role": "button",
+            "name": "Back",
+            "ref": "e388"
+          },
+          {
+            "index": 5,
+            "role": "button",
+            "name": "Continue",
+            "ref": "e391"
+          }
+        ],
+        "text": "SCROLL\nMAITAMA, ABUJA\nStep out of\nthe noise.\nInto stillness.\nA sanctuary of Thai, Balinese and African body therapies in the heart of Abuja's most prestigious district. Cross the threshold and let the city dissolve.\nBEGIN YOUR ESCAPE\nEXPLORE THE RITUALS\n\"Where the city's energy dissolves the moment you step inside.\"\n4.5\nON TRIPADVISOR\n18K+\nINSTAGRAM FOLLOWERS\n10AM–2AM\nOPEN EVERY DAY\nUNISEX · MEN, WOMEN & CHILDREN\nTHE RITUALS\nTreatments crafted for deep restoration\nEvery session performed by therapists trained in Thai, Balinese and African wellness traditions. Drag through, or simply scroll.\n01 — Therapeutic\nBody Massage\nFull-body therapeutic massage targeting deep muscle tension, restoring circulation and releasing the weight of the day. Pressure tailored to your body.\nFROM ₦15,000 BOOK THIS RITUAL\n02 — Ancient Asia\nThai & Bali\nAcupressure, passive stretching and rhythmic compression drawn from centuries-old Asian practice, realigning your energy and dissolving stress at the root.\nFROM ₦20,000 BOOK THIS RITUAL\n03 — Radiance\nFacial Treatment\nDeep-cleanse and glow facials with professional-grade products, targeting repair, hydration and a luminous, rested complexion.\nFROM ₦12,000 BOOK THIS RITUAL\n04 — Detail\nMani & Pedi\nLuxurious nail and foot care, from classic grooming to spa-grade treatments with scrubs, soaks and impeccable finishing.\nFROM ₦8,000 BOOK THIS RITUAL\n05 — Together\nCouples Escape\nSide-by-side relaxation designed for two. Perfect for anniversaries, celebrations, or simply unwinding together away from the world.\nFROM ₦40,000 BOOK THIS RITUAL\nTHE SPACES\nRooms built for letting go\nEvery corner of Escape House was designed with one intention: to give you a complete, uninterrupted escape.\nTreatment Rooms\nPrivate, dimly-lit and warm. Soft linen, low light and silence, the moment the door closes the city stops existing.\nThe Lounge\nArrive early, leave late. A quiet space to settle your breath before, and hold onto the calm after.\nCouples Suite\nTwo beds, one room, shared stillness. Designed for celebrations and slow afternoons together.\nTHE ATMOSPHERE\nA glimpse inside\nBODY MASSAGE\n4.5\nSTARS\nOUR STORY\nA sanctuary in the heart of Maitama\nNestled in Abuja's most prestigious district, Escape House began with a single belief: that peace should not be a luxury reserved for travel. The moment you step inside, the city's energy dissolves.\nOur therapists are trained in Thai and Balinese techniques, bringing authentic Asian wellness traditions to Nigeria. Every session is tailored, every detail considered, every visit a complete reset.\nOpen daily from 10 AM to 2 AM, because your peace should not have a curfew.\n18K+\nINSTAGRAM\n16 hrs\nOPEN DAILY\nUnisex\nFOR EVERYONE\nGUEST REVIEWS\nIn their own words",
+        "jsGated": false,
+        "hasPrice": true
+      },
+      {
+        "url": "https://escape-house-spa.netlify.app/",
+        "title": "Escape House Spa | Luxury Wellness, Maitama Abuja",
+        "elements": [
+          {
+            "index": 1,
+            "role": "button",
+            "name": "Close booking",
+            "ref": "e333"
+          },
+          {
+            "index": 2,
+            "role": "textbox",
+            "name": "Your Name",
+            "ref": "e405"
+          },
+          {
+            "index": 3,
+            "role": "textbox",
+            "name": "Phone Number",
+            "ref": "e408"
+          },
+          {
+            "index": 4,
+            "role": "textbox",
+            "name": "Special Requests (optional)",
+            "ref": "e411"
+          },
+          {
+            "index": 5,
+            "role": "button",
+            "name": "Send booking via WhatsApp",
+            "ref": "e412"
+          },
+          {
+            "index": 6,
+            "role": "button",
+            "name": "Back",
+            "ref": "e417"
+          }
+        ],
+        "text": "SCROLL\nMAITAMA, ABUJA\nStep out of\nthe noise.\nInto stillness.\nA sanctuary of Thai, Balinese and African body therapies in the heart of Abuja's most prestigious district. Cross the threshold and let the city dissolve.\nBEGIN YOUR ESCAPE\nEXPLORE THE RITUALS\n\"Where the city's energy dissolves the moment you step inside.\"\n4.5\nON TRIPADVISOR\n18K+\nINSTAGRAM FOLLOWERS\n10AM–2AM\nOPEN EVERY DAY\nUNISEX · MEN, WOMEN & CHILDREN\nTHE RITUALS\nTreatments crafted for deep restoration\nEvery session performed by therapists trained in Thai, Balinese and African wellness traditions. Drag through, or simply scroll.\n01 — Therapeutic\nBody Massage\nFull-body therapeutic massage targeting deep muscle tension, restoring circulation and releasing the weight of the day. Pressure tailored to your body.\nFROM ₦15,000 BOOK THIS RITUAL\n02 — Ancient Asia\nThai & Bali\nAcupressure, passive stretching and rhythmic compression drawn from centuries-old Asian practice, realigning your energy and dissolving stress at the root.\nFROM ₦20,000 BOOK THIS RITUAL\n03 — Radiance\nFacial Treatment\nDeep-cleanse and glow facials with professional-grade products, targeting repair, hydration and a luminous, rested complexion.\nFROM ₦12,000 BOOK THIS RITUAL\n04 — Detail\nMani & Pedi\nLuxurious nail and foot care, from classic grooming to spa-grade treatments with scrubs, soaks and impeccable finishing.\nFROM ₦8,000 BOOK THIS RITUAL\n05 — Together\nCouples Escape\nSide-by-side relaxation designed for two. Perfect for anniversaries, celebrations, or simply unwinding together away from the world.\nFROM ₦40,000 BOOK THIS RITUAL\nTHE SPACES\nRooms built for letting go\nEvery corner of Escape House was designed with one intention: to give you a complete, uninterrupted escape.\nTreatment Rooms\nPrivate, dimly-lit and warm. Soft linen, low light and silence, the moment the door closes the city stops existing.\nThe Lounge\nArrive early, leave late. A quiet space to settle your breath before, and hold onto the calm after.\nCouples Suite\nTwo beds, one room, shared stillness. Designed for celebrations and slow afternoons together.\nTHE ATMOSPHERE\nA glimpse inside\nBODY MASSAGE\n4.5\nSTARS\nOUR STORY\nA sanctuary in the heart of Maitama\nNestled in Abuja's most prestigious district, Escape House began with a single belief: that peace should not be a luxury reserved for travel. The moment you step inside, the city's energy dissolves.\nOur therapists are trained in Thai and Balinese techniques, bringing authentic Asian wellness traditions to Nigeria. Every session is tailored, every detail considered, every visit a complete reset.\nOpen daily from 10 AM to 2 AM, because your peace should not have a curfew.\n18K+\nINSTAGRAM\n16 hrs\nOPEN DAILY\nUnisex\nFOR EVERYONE\nGUEST REVIEWS\nIn their own words",
+        "jsGated": false,
+        "hasPrice": true
+      },
+      {
+        "url": "https://escape-house-spa.netlify.app/",
+        "title": "Escape House Spa | Luxury Wellness, Maitama Abuja",
+        "elements": [
+          {
+            "index": 1,
+            "role": "button",
+            "name": "Close booking",
+            "ref": "e333"
+          },
+          {
+            "index": 2,
+            "role": "textbox",
+            "name": "Your Name",
+            "ref": "e405",
+            "value": "Alex Morgan"
+          },
+          {
+            "index": 3,
+            "role": "textbox",
+            "name": "Phone Number",
+            "ref": "e408"
+          },
+          {
+            "index": 4,
+            "role": "textbox",
+            "name": "Special Requests (optional)",
+            "ref": "e411"
+          },
+          {
+            "index": 5,
+            "role": "button",
+            "name": "Send booking via WhatsApp",
+            "ref": "e412"
+          },
+          {
+            "index": 6,
+            "role": "button",
+            "name": "Back",
+            "ref": "e417"
+          }
+        ],
+        "text": "SCROLL\nMAITAMA, ABUJA\nStep out of\nthe noise.\nInto stillness.\nA sanctuary of Thai, Balinese and African body therapies in the heart of Abuja's most prestigious district. Cross the threshold and let the city dissolve.\nBEGIN YOUR ESCAPE\nEXPLORE THE RITUALS\n\"Where the city's energy dissolves the moment you step inside.\"\n4.5\nON TRIPADVISOR\n18K+\nINSTAGRAM FOLLOWERS\n10AM–2AM\nOPEN EVERY DAY\nUNISEX · MEN, WOMEN & CHILDREN\nTHE RITUALS\nTreatments crafted for deep restoration\nEvery session performed by therapists trained in Thai, Balinese and African wellness traditions. Drag through, or simply scroll.\n01 — Therapeutic\nBody Massage\nFull-body therapeutic massage targeting deep muscle tension, restoring circulation and releasing the weight of the day. Pressure tailored to your body.\nFROM ₦15,000 BOOK THIS RITUAL\n02 — Ancient Asia\nThai & Bali\nAcupressure, passive stretching and rhythmic compression drawn from centuries-old Asian practice, realigning your energy and dissolving stress at the root.\nFROM ₦20,000 BOOK THIS RITUAL\n03 — Radiance\nFacial Treatment\nDeep-cleanse and glow facials with professional-grade products, targeting repair, hydration and a luminous, rested complexion.\nFROM ₦12,000 BOOK THIS RITUAL\n04 — Detail\nMani & Pedi\nLuxurious nail and foot care, from classic grooming to spa-grade treatments with scrubs, soaks and impeccable finishing.\nFROM ₦8,000 BOOK THIS RITUAL\n05 — Together\nCouples Escape\nSide-by-side relaxation designed for two. Perfect for anniversaries, celebrations, or simply unwinding together away from the world.\nFROM ₦40,000 BOOK THIS RITUAL\nTHE SPACES\nRooms built for letting go\nEvery corner of Escape House was designed with one intention: to give you a complete, uninterrupted escape.\nTreatment Rooms\nPrivate, dimly-lit and warm. Soft linen, low light and silence, the moment the door closes the city stops existing.\nThe Lounge\nArrive early, leave late. A quiet space to settle your breath before, and hold onto the calm after.\nCouples Suite\nTwo beds, one room, shared stillness. Designed for celebrations and slow afternoons together.\nTHE ATMOSPHERE\nA glimpse inside\nBODY MASSAGE\n4.5\nSTARS\nOUR STORY\nA sanctuary in the heart of Maitama\nNestled in Abuja's most prestigious district, Escape House began with a single belief: that peace should not be a luxury reserved for travel. The moment you step inside, the city's energy dissolves.\nOur therapists are trained in Thai and Balinese techniques, bringing authentic Asian wellness traditions to Nigeria. Every session is tailored, every detail considered, every visit a complete reset.\nOpen daily from 10 AM to 2 AM, because your peace should not have a curfew.\n18K+\nINSTAGRAM\n16 hrs\nOPEN DAILY\nUnisex\nFOR EVERYONE\nGUEST REVIEWS\nIn their own words",
+        "jsGated": false,
+        "hasPrice": true
+      },
+      {
+        "url": "https://escape-house-spa.netlify.app/",
+        "title": "Escape House Spa | Luxury Wellness, Maitama Abuja",
+        "elements": [
+          {
+            "index": 1,
+            "role": "button",
+            "name": "Close booking",
+            "ref": "e333"
+          },
+          {
+            "index": 2,
+            "role": "textbox",
+            "name": "Your Name",
+            "ref": "e405",
+            "value": "Alex Morgan"
+          },
+          {
+            "index": 3,
+            "role": "textbox",
+            "name": "Phone Number",
+            "ref": "e408",
+            "value": "+1 415 555 0132"
+          },
+          {
+            "index": 4,
+            "role": "textbox",
+            "name": "Special Requests (optional)",
+            "ref": "e411"
+          },
+          {
+            "index": 5,
+            "role": "button",
+            "name": "Send booking via WhatsApp",
+            "ref": "e412"
+          },
+          {
+            "index": 6,
+            "role": "button",
+            "name": "Back",
+            "ref": "e417"
+          }
+        ],
+        "text": "SCROLL\nMAITAMA, ABUJA\nStep out of\nthe noise.\nInto stillness.\nA sanctuary of Thai, Balinese and African body therapies in the heart of Abuja's most prestigious district. Cross the threshold and let the city dissolve.\nBEGIN YOUR ESCAPE\nEXPLORE THE RITUALS\n\"Where the city's energy dissolves the moment you step inside.\"\n4.5\nON TRIPADVISOR\n18K+\nINSTAGRAM FOLLOWERS\n10AM–2AM\nOPEN EVERY DAY\nUNISEX · MEN, WOMEN & CHILDREN\nTHE RITUALS\nTreatments crafted for deep restoration\nEvery session performed by therapists trained in Thai, Balinese and African wellness traditions. Drag through, or simply scroll.\n01 — Therapeutic\nBody Massage\nFull-body therapeutic massage targeting deep muscle tension, restoring circulation and releasing the weight of the day. Pressure tailored to your body.\nFROM ₦15,000 BOOK THIS RITUAL\n02 — Ancient Asia\nThai & Bali\nAcupressure, passive stretching and rhythmic compression drawn from centuries-old Asian practice, realigning your energy and dissolving stress at the root.\nFROM ₦20,000 BOOK THIS RITUAL\n03 — Radiance\nFacial Treatment\nDeep-cleanse and glow facials with professional-grade products, targeting repair, hydration and a luminous, rested complexion.\nFROM ₦12,000 BOOK THIS RITUAL\n04 — Detail\nMani & Pedi\nLuxurious nail and foot care, from classic grooming to spa-grade treatments with scrubs, soaks and impeccable finishing.\nFROM ₦8,000 BOOK THIS RITUAL\n05 — Together\nCouples Escape\nSide-by-side relaxation designed for two. Perfect for anniversaries, celebrations, or simply unwinding together away from the world.\nFROM ₦40,000 BOOK THIS RITUAL\nTHE SPACES\nRooms built for letting go\nEvery corner of Escape House was designed with one intention: to give you a complete, uninterrupted escape.\nTreatment Rooms\nPrivate, dimly-lit and warm. Soft linen, low light and silence, the moment the door closes the city stops existing.\nThe Lounge\nArrive early, leave late. A quiet space to settle your breath before, and hold onto the calm after.\nCouples Suite\nTwo beds, one room, shared stillness. Designed for celebrations and slow afternoons together.\nTHE ATMOSPHERE\nA glimpse inside\nBODY MASSAGE\n4.5\nSTARS\nOUR STORY\nA sanctuary in the heart of Maitama\nNestled in Abuja's most prestigious district, Escape House began with a single belief: that peace should not be a luxury reserved for travel. The moment you step inside, the city's energy dissolves.\nOur therapists are trained in Thai and Balinese techniques, bringing authentic Asian wellness traditions to Nigeria. Every session is tailored, every detail considered, every visit a complete reset.\nOpen daily from 10 AM to 2 AM, because your peace should not have a curfew.\n18K+\nINSTAGRAM\n16 hrs\nOPEN DAILY\nUnisex\nFOR EVERYONE\nGUEST REVIEWS\nIn their own words",
+        "jsGated": false,
+        "hasPrice": true
+      }
+    ],
+    "declaredDone": false,
+    "gaveUp": false,
+    "operated": [
+      "click \"Book Now\"",
+      "click \"01 Body Massage\"",
+      "click \"Continue\"",
+      "type \"Preferred Date\"",
+      "click \"Continue\"",
+      "type \"Your Name\"",
+      "type \"Phone Number\"",
+      "click \"Send booking via WhatsApp\""
+    ],
+    "failures": [],
+    "stepCount": 8,
+    "stealth": true,
+    "handoffs": [
+      "https://api.whatsapp.com/send/?phone=2348099224450&text=Hi+Escape+House%2C+I+would+like+to+book+a+session.%0A%0A%2ARitual%3A%2A+Body+Massage%0A%2AName%3A%2A+Alex+Morgan%0A%2APhone%3A%2A+%2B1+415+555+0132%0A%2ADate%3A%2A+2026-09-10%0A&type=phone_number&app_absent=0"
+    ]
+  },
+  "verdict": {
+    "grade": "D",
+    "score": 45,
+    "milestones": [
+      "understood-offering",
+      "found-key-info",
+      "found-cta"
+    ],
+    "blockers": [
+      {
+        "blocker": "dead-end-cta",
+        "detail": "The site handed the action off to WhatsApp in a separate tab. A browser agent cannot follow it, so the action cannot be finished in the browser."
+      }
+    ],
+    "steps": 8,
+    "summary": "An AI agent failed to book an appointment. It found the right button and still could not finish. Primary blocker: dead-end-cta.",
+    "sessionId": "ip-10-0-10-134:1ab541a9-308b-4759-848f-2064417343cb:cmtkgry6v00njo801yp7b3ine:1788555985491.iZQuX_kaEbwHwD-hUhoZWA"
+  }
+}

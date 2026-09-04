@@ -54,6 +54,17 @@ const RUN_ID = /^[a-z0-9][a-z0-9-]{0,62}$/;
 
 const RUNTIME = () => path.join(process.cwd(), "public", "runs");
 const EXAMPLES = () => path.join(process.cwd(), "examples");
+/**
+ * Where a shipped example's screenshots live, which is not where a live run puts
+ * its own.
+ *
+ * `public/runs/` is gitignored, so for a long time the committed examples arrived
+ * on a fresh clone with their notes and none of their frames: half the product is
+ * called Witness and the half a stranger could see was the half without pictures.
+ * An example's frames are committed here instead, deliberately outside the
+ * directory a re-run is allowed to overwrite.
+ */
+const SHIPPED = () => path.join(process.cwd(), "public", "examples");
 
 /** When the run happened, out of its own id: base36 milliseconds, then randomness. */
 export function runTime(runId: string): number | undefined {
@@ -101,26 +112,31 @@ export async function readRun(runId: string): Promise<StoredRun | undefined> {
 
   try {
     const found = shaped(await readJson(path.join(RUNTIME(), runId, "transcript.json")), runId);
-    if (found) return { ...found, shots: await readShots(runId) };
+    if (found) return { ...found, shots: await readShots(runId, RUNTIME(), "/runs") };
   } catch {
     // Not run on this machine, or not run since the last deploy wiped the disk.
   }
   try {
     const found = shaped(await readJson(path.join(EXAMPLES(), `${runId}.json`)), runId);
-    if (found) return { ...found, example: true };
+    if (found)
+      return { ...found, example: true, shots: await readShots(runId, SHIPPED(), "/examples") };
   } catch {
     // No such run anywhere.
   }
   return undefined;
 }
 
-/** The screenshots a live run left beside its notes, in the order it took them. */
-async function readShots(runId: string): Promise<string[] | undefined> {
+/** The screenshots a run left beside its notes, in the order it took them. */
+async function readShots(
+  runId: string,
+  dir: string,
+  prefix: string,
+): Promise<string[] | undefined> {
   try {
-    const files = (await readdir(path.join(RUNTIME(), runId)))
+    const files = (await readdir(path.join(dir, runId)))
       .filter((f) => /\.(jpe?g|png)$/i.test(f))
       .sort();
-    return files.length ? files.map((f) => `/runs/${runId}/${f}`) : undefined;
+    return files.length ? files.map((f) => `${prefix}/${runId}/${f}`) : undefined;
   } catch {
     return undefined;
   }

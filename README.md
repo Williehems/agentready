@@ -17,9 +17,13 @@ An AI agent failed to book an appointment. It found the right button and still
 could not finish. Primary blocker: dead-end-cta.
 ```
 
-Both of those are real verdicts from runs in this repository. The second one is
-about a site I built and shipped myself, which is the only kind of failing grade
-I am willing to publish about a named host.
+Both of those are real verdicts from runs shipped in this repository. The second
+one is about a site I built and shipped myself, which is the only kind of failing
+grade I am willing to publish about a named host. Its eight steps are worth
+reading: the agent picked a treatment, chose a date, typed a name and a phone
+number, and then pressed "Send booking via WhatsApp", at which point the site
+handed the booking to a tab the agent cannot follow. Seven correct moves and no
+booking. That is the whole thesis in one run.
 
 ## The question
 
@@ -151,9 +155,10 @@ because a browser provider answered 503 is a libel, not a finding.
 
 By action: 22 integrate, 11 signup, 2 contact, 1 book.
 
-Three runs ship in `examples/` so a fresh clone has something real to show. Their
-screenshots do not ship: those stay on the machine that ran them, and the run page
-says so rather than showing broken images.
+Four runs ship in `examples/` so a fresh clone has something real to show, and the
+one failing example ships its eight screenshots too, under `public/examples/`. The
+three older ones do not have their frames committed, and their pages say so rather
+than showing broken images.
 
 Sites that failed and why, from real runs: a booking form whose submit opened
 WhatsApp in a second tab and told the first tab nothing, so the agent had no way
