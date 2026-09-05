@@ -1,0 +1,14 @@
+# The Vercel CLI does not read .gitignore. It has its own default exclusion list,
+# and .gitignore is on it, which is easy to misread as "gitignored files are safe".
+# They are not: anything on disk and not named here is uploaded and, if it sits
+# under public/, served.
+#
+# Found the expensive way. The first production deployment published all 40 runs
+# from this machine's local history, board and raw transcripts alike, across 12
+# hosts, including failing grades against named third parties that this project
+# deliberately does not publish. Four curated runs ship from examples/ instead, and
+# that number is an editorial decision, not an accident of what was on disk.
+public/runs
+
+# Scratch probes. Outside public/, so never served, but no reason to upload them.
+tmp
