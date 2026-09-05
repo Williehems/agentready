@@ -34,6 +34,14 @@
      paper, a real black hole at night. */
   --dock-shadow: 0 18px 40px -18px rgb(15 23 42 / 0.2);
   --menu-shadow: 0 26px 60px -24px rgb(15 23 42 / 0.26);
+
+  /* The grain, once. The same 240-byte SVG was written out five times across the
+     scrims and the console texture, and a filter nobody can edit in one place is a
+     filter that drifts. Both strengths are here because the console wears it
+     heavier than the landing scrims do; the tile itself is identical. Not inside
+     .dark: the noise is the same at either hour and only the veils over it change. */
+  --noise: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='0.08'/%3E%3C/svg%3E");
+  --noise-strong: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='0.12'/%3E%3C/svg%3E");
 }
 
 .dark {
@@ -136,7 +144,7 @@ body {
       rgb(var(--veil) / 0.06) 56%,
       rgb(var(--veil) / 0.78) 100%
     ),
-    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='0.08'/%3E%3C/svg%3E");
+    var(--noise);
 }
 
 .dark .field::after {
@@ -155,7 +163,7 @@ body {
       rgb(var(--veil) / 0) 58%,
       rgb(var(--veil) / 0.74) 100%
     ),
-    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='0.08'/%3E%3C/svg%3E");
+    var(--noise);
 }
 
 /* Narrow viewports get the figure centred, since a portrait cover crop keeps only
@@ -180,7 +188,7 @@ body {
         rgb(var(--veil) / 0.88) 74%,
         rgb(var(--veil) / 0.96) 100%
       ),
-      url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='0.08'/%3E%3C/svg%3E");
+      var(--noise);
   }
 
   .dark .field::before {
@@ -197,7 +205,7 @@ body {
         rgb(var(--veil) / 0.86) 74%,
         rgb(var(--veil) / 0.95) 100%
       ),
-      url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='0.08'/%3E%3C/svg%3E");
+      var(--noise);
   }
 }
 
@@ -303,7 +311,7 @@ body {
   z-index: -1;
   pointer-events: none;
   opacity: 0.4;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='0.12'/%3E%3C/svg%3E");
+  background-image: var(--noise-strong);
 }
 
 /* Fades the stream out under the dock instead of letting text collide with it. */

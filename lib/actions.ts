@@ -1,3 +1,4 @@
+import { ACTION_LABELS } from "./action-labels";
 import type { ActionKind } from "./types";
 
 /**
@@ -6,6 +7,7 @@ import type { ActionKind } from "./types";
  */
 export interface ActionSpec {
   id: ActionKind;
+  /** From ./action-labels, which is the copy the browser is allowed to have. */
   label: string;
   /** Handed to the model verbatim as the task. */
   goal: string;
@@ -40,7 +42,7 @@ export interface ActionSpec {
 export const ACTIONS: Record<ActionKind, ActionSpec> = {
   signup: {
     id: "signup",
-    label: "Sign up",
+    label: ACTION_LABELS.signup,
     goal:
       "Create a new account on this site. Get as far as the account creation form and fill in what you can, but never submit real payment details.",
     done:
@@ -51,7 +53,7 @@ export const ACTIONS: Record<ActionKind, ActionSpec> = {
   },
   purchase: {
     id: "purchase",
-    label: "Buy something",
+    label: ACTION_LABELS.purchase,
     goal:
       "Buy the cheapest available product or plan. Get as far as the checkout or payment step, then stop. Never enter real payment details.",
     done:
@@ -62,7 +64,7 @@ export const ACTIONS: Record<ActionKind, ActionSpec> = {
   },
   integrate: {
     id: "integrate",
-    label: "Integrate the API",
+    label: ACTION_LABELS.integrate,
     goal:
       "You are a developer evaluating this product. Find the API documentation, a code example you could copy, and how to obtain an API key.",
     done:
@@ -73,7 +75,7 @@ export const ACTIONS: Record<ActionKind, ActionSpec> = {
   },
   book: {
     id: "book",
-    label: "Book an appointment",
+    label: ACTION_LABELS.book,
     /**
      * Pressing submit is the measurement, not a step past it.
      *
@@ -95,7 +97,7 @@ export const ACTIONS: Record<ActionKind, ActionSpec> = {
   },
   contact: {
     id: "contact",
-    label: "Reach a human",
+    label: ACTION_LABELS.contact,
     goal:
       "Reach a human at this organisation. Find a working contact route and get as far as composing a message, then stop before sending.",
     done:
@@ -108,11 +110,6 @@ export const ACTIONS: Record<ActionKind, ActionSpec> = {
 
 export const ACTION_LIST: ActionSpec[] = Object.values(ACTIONS);
 
-/**
- * Link schemes that hand the visitor off to something a browser agent cannot
- * complete. A site whose only route to conversion is one of these is a
- * dead end for every machine visitor, which is the dead-end-cta blocker.
- */
 /**
  * Protocols that leave the browser for another application entirely. Nothing an
  * agent can do with one of these, and nothing a machine visitor can complete

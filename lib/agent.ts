@@ -176,6 +176,9 @@ type Outcome =
  * consumed is not a finding about theirs.
  */
 export function systemPrompt(runId: string): string {
+  const cached = LAST_PROMPT;
+  if (cached && cached.runId === runId) return cached.text;
+
   const today = new Date();
   const stamp = today.toLocaleDateString("en-GB", {
     weekday: "long",
@@ -208,7 +211,7 @@ export function systemPrompt(runId: string): string {
   // later, under a note saying the text above is the whole page and not a summary,
   // answered done. A statement about how we render a page is ours to make; nothing
   // here says anything about a site.
-  return `You are an AI agent operating a real web browser on behalf of a person.
+  const text = `You are an AI agent operating a real web browser on behalf of a person.
 You are not a crawler and not a tester: you are trying to actually get something done.
 
 Today is ${stamp}. In numbers, today is ${iso}.
@@ -272,7 +275,26 @@ Rules:
   control that finishes the task is in the list, use it.
 - If the element list is empty, the page is unreadable to you: give_up.
 - Do not repeat an action that already failed or already left the page unchanged.`;
+
+  LAST_PROMPT = { runId, text };
+  return text;
 }
+
+/**
+ * The rules as they were built for the run being decided now.
+ *
+ * One entry, not a table, because that is the deployment: runs.ts refuses a second
+ * run while one is in flight, so there is never more than one set of rules worth
+ * holding and this cannot grow. A run asks for these up to ten times and the answer
+ * is the same every time, so the date is formatted once and the three and a half
+ * thousand characters are assembled once.
+ *
+ * It also settles a question the per-run build left open. A run that starts at 23:59
+ * used to be told one date on its first step and the next date on its last, and a
+ * booking form filled across that boundary would carry two different days. The date
+ * still moves between runs, which is the whole reason it is not a module constant.
+ */
+let LAST_PROMPT: { runId: string; text: string } | undefined;
 
 interface RunOptions {
   url: string;
@@ -1327,20 +1349,25 @@ export async function runAudit(opts: RunOptions): Promise<void> {
       }
 
       // The screenshot is taken before the action, so each step shows exactly
-      // what the agent was looking at when it made that decision.
-      let shot: string | undefined;
-      try {
-        const buf = await withTimeout(
-          page.screenshot({ type: "jpeg", quality: 55 }),
-          clock.cap(SHOT_MS),
-          "the screenshot",
-        );
-        const file = `${String(i).padStart(2, "0")}.jpg`;
-        await writeFile(path.join(shotDir, file), buf);
-        shot = `/runs/${runId}/${file}`;
-      } catch {
+      // what the agent was looking at when it made that decision. It is not waited
+      // for here: the decision is an HTTP call to the model and touches nothing in
+      // the browser, so the frame is captured and written while that call is out.
+      // Measured against the budget rather than the wall clock, this is the only
+      // work in the step that was on the critical path for no reason. Caught at the
+      // point it is started, so a frame nobody ends up waiting for cannot surface
+      // as an unhandled rejection on a run that stops before the next step.
+      const shotSoon: Promise<string | undefined> = withTimeout(
+        page.screenshot({ type: "jpeg", quality: 55 }),
+        clock.cap(SHOT_MS),
+        "the screenshot",
+      )
+        .then(async (buf) => {
+          const file = `${String(i).padStart(2, "0")}.jpg`;
+          await writeFile(path.join(shotDir, file), buf);
+          return `/runs/${runId}/${file}`;
+        })
         // A failed screenshot degrades the evidence, it does not end the run.
-      }
+        .catch(() => undefined);
 
       if (p.jsGated) {
         await emit({
@@ -1386,6 +1413,10 @@ export async function runAudit(opts: RunOptions): Promise<void> {
       const d = outcome.decision;
       stepCount = i + 1;
       const el = resolveTarget(p, d.target);
+      // Collected now, at the first point a step is going to be written down. By
+      // here the model has answered, so the frame has had the whole of that call to
+      // finish and this costs nothing. Neither break above waits for it.
+      const shot = await shotSoon;
 
       if (d.action === "done" || d.action === "give_up") {
         declaredDone = d.action === "done";

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import type { RunEvent, StepAction } from "@/lib/types";
 
 /**
@@ -27,7 +27,18 @@ const VERB: Record<StepAction, string> = {
   give_up: "gave up",
 };
 
-function StepBubble({ step }: { step: StepEvent }) {
+/**
+ * One step, and the frame it was looking at.
+ *
+ * Memoised, because a step never changes after it is said. Every event on the
+ * stream gives the list a new array, and without this each of the ten bubbles
+ * already on screen would render again for each of them, including the unfolded
+ * screenshot of whichever one someone was in the middle of reading. The event
+ * objects are parsed once and never touched again, so a shallow compare is
+ * enough, and the fold stays open across a re-render either way: that state
+ * lives on the element, not in this closure.
+ */
+const StepBubble = memo(function StepBubble({ step }: { step: StepEvent }) {
   const [open, setOpen] = useState(false);
   const terminal = step.action === "done" || step.action === "give_up";
 
@@ -82,7 +93,7 @@ function StepBubble({ step }: { step: StepEvent }) {
       </div>
     </li>
   );
-}
+});
 
 export function ChatStream({
   host,

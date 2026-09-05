@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useMemo, useRef, useState } from "react";
-import { ACTIONS } from "@/lib/actions";
+import { ACTION_LABELS } from "@/lib/action-labels";
 import type { ActionKind, RunEvent, Verdict } from "@/lib/types";
 import { AuditDock } from "./AuditDock";
 import { ChatStream } from "./ChatStream";
@@ -164,7 +164,7 @@ export function AuditConsole() {
       <div className="mx-auto w-full max-w-shell px-4 pb-40 sm:px-6">
         <ChatStream
           host={opened ? hostLabel(auditedUrl || url) : undefined}
-          actionLabel={action ? ACTIONS[action].label : undefined}
+          actionLabel={action ? ACTION_LABELS[action] : undefined}
           steps={steps}
           status={status}
           running={running}

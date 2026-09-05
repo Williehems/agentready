@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { ACTION_LIST } from "@/lib/actions";
+import { ACTION_LABELS, ACTION_ORDER } from "@/lib/action-labels";
 import type { ActionKind } from "@/lib/types";
 
 /**
@@ -124,24 +124,24 @@ export function AuditDock({
             <p className="px-4 pb-2 pt-3.5 text-[10px] uppercase tracking-[0.18em] text-dim">
               What is this audit for?
             </p>
-            {ACTION_LIST.map((a, i) => (
+            {ACTION_ORDER.map((id, i) => (
               <button
-                key={a.id}
+                key={id}
                 ref={i === 0 ? first : undefined}
                 type="button"
                 role="menuitem"
-                onClick={() => choose(a.id)}
+                onClick={() => choose(id)}
                 className="group flex w-full items-start gap-3 px-4 py-2.5 text-left transition-colors hover:bg-raised focus:bg-raised focus:outline-none"
               >
                 <span
                   className={`mt-[5px] h-2 w-2 shrink-0 rounded-full border ${
-                    lastAction === a.id ? "border-grade-a bg-grade-a" : "border-line-strong"
+                    lastAction === id ? "border-grade-a bg-grade-a" : "border-line-strong"
                   }`}
                   aria-hidden
                 />
                 <span className="min-w-0">
-                  <span className="block text-[13px] text-text">{a.label}</span>
-                  <span className="block text-[11px] leading-snug text-dim">{HINT[a.id]}</span>
+                  <span className="block text-[13px] text-text">{ACTION_LABELS[id]}</span>
+                  <span className="block text-[11px] leading-snug text-dim">{HINT[id]}</span>
                 </span>
               </button>
             ))}

@@ -120,10 +120,7 @@ export function durationMs(v: string | null): number | undefined {
   const unit: Record<string, number> = { ms: 1, s: 1000, m: 60_000, h: 3_600_000 };
   let total = 0;
   let seen = false;
-  // exec in a loop rather than matchAll, whose iterator this project's default
-  // compile target rejects without downlevelIteration.
-  const re = /([\d.]+)\s*(ms|s|m|h)/g;
-  for (let m = re.exec(v); m; m = re.exec(v)) {
+  for (const m of v.matchAll(/([\d.]+)\s*(ms|s|m|h)/g)) {
     const q = Number(m[1]);
     if (!Number.isFinite(q)) continue;
     seen = true;

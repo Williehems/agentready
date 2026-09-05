@@ -110,16 +110,26 @@ async function readJson(file: string): Promise<unknown> {
 export async function readRun(runId: string): Promise<StoredRun | undefined> {
   if (!RUN_ID.test(runId)) return undefined;
 
+  // The notes and the frames beside them are two independent reads, so they go out
+  // together. If the notes are not there the pair rejects and the next place is
+  // tried, exactly as before; readShots answers undefined rather than throwing.
   try {
-    const found = shaped(await readJson(path.join(RUNTIME(), runId, "transcript.json")), runId);
-    if (found) return { ...found, shots: await readShots(runId, RUNTIME(), "/runs") };
+    const [raw, shots] = await Promise.all([
+      readJson(path.join(RUNTIME(), runId, "transcript.json")),
+      readShots(runId, RUNTIME(), "/runs"),
+    ]);
+    const found = shaped(raw, runId);
+    if (found) return { ...found, shots };
   } catch {
     // Not run on this machine, or not run since the last deploy wiped the disk.
   }
   try {
-    const found = shaped(await readJson(path.join(EXAMPLES(), `${runId}.json`)), runId);
-    if (found)
-      return { ...found, example: true, shots: await readShots(runId, SHIPPED(), "/examples") };
+    const [raw, shots] = await Promise.all([
+      readJson(path.join(EXAMPLES(), `${runId}.json`)),
+      readShots(runId, SHIPPED(), "/examples"),
+    ]);
+    const found = shaped(raw, runId);
+    if (found) return { ...found, example: true, shots };
   } catch {
     // No such run anywhere.
   }
@@ -185,30 +195,54 @@ function summarise(r: StoredRun): RunSummary {
  * of the same id, since the runtime one is the one with the screenshots.
  */
 export async function listRuns(): Promise<RunSummary[]> {
-  const ids = new Map<string, StoredRun>();
+  const sources = [
+    { dir: EXAMPLES(), isExample: true },
+    { dir: RUNTIME(), isExample: false },
+  ] as const;
 
-  for (const [dir, isExample] of [
-    [EXAMPLES(), true],
-    [RUNTIME(), false],
-  ] as const) {
-    let entries: string[] = [];
-    try {
-      entries = await readdir(dir);
-    } catch {
-      continue;
-    }
-    for (const entry of entries) {
-      const runId = isExample ? entry.replace(/\.json$/i, "") : entry;
-      if (entry === runId && isExample) continue; // not a .json file
-      if (!RUN_ID.test(runId)) continue;
-      const file = isExample ? path.join(dir, entry) : path.join(dir, entry, "transcript.json");
+  // Both directories at once, and every transcript inside them at once. Read one
+  // after another, this page waited for the sum of forty-odd file reads and
+  // forty-odd regrades when it could have waited for the slowest one. Unbounded on
+  // purpose: the count here is the number of runs this instance has ever kept, and
+  // the daily cap in runs.ts is what keeps that a number of runs rather than a
+  // number worth pooling.
+  const listings = await Promise.all(
+    sources.map(async ({ dir, isExample }) => {
+      let entries: string[] = [];
       try {
-        const found = shaped(await readJson(file), runId);
-        if (found) ids.set(runId, isExample ? { ...found, example: true } : found);
+        entries = await readdir(dir);
       } catch {
-        // A directory with no notes in it, or notes we cannot parse. Skip it.
+        return [];
       }
-    }
+      const wanted = entries.flatMap((entry) => {
+        const runId = isExample ? entry.replace(/\.json$/i, "") : entry;
+        if (entry === runId && isExample) return []; // not a .json file
+        if (!RUN_ID.test(runId)) return [];
+        const file = isExample ? path.join(dir, entry) : path.join(dir, entry, "transcript.json");
+        return [{ runId, file }];
+      });
+      return Promise.all(
+        wanted.map(async ({ runId, file }) => {
+          try {
+            const found = shaped(await readJson(file), runId);
+            if (!found) return undefined;
+            return { key: runId, run: isExample ? { ...found, example: true as const } : found };
+          } catch {
+            // A directory with no notes in it, or notes we cannot parse. Skip it.
+            return undefined;
+          }
+        }),
+      );
+    }),
+  );
+
+  // Collected in source order, examples then runtime, so a run that has been re-run
+  // here wins: the runtime copy is the one with the screenshots beside it. Keyed on
+  // the id the directory gave rather than the one the file claims, which is what
+  // decides whether the two copies are the same run.
+  const ids = new Map<string, StoredRun>();
+  for (const found of listings.flat()) {
+    if (found) ids.set(found.key, found.run);
   }
 
   return Array.from(ids.values())

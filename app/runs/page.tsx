@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { ShellHeader } from "@/components/ShellHeader";
 import { listRuns, type RunSummary } from "@/lib/store";
 
@@ -71,15 +72,23 @@ export default async function RunsPage() {
 
         {runs.length === 0 ? (
           <p className="mt-10 border border-line bg-surface p-5 text-[13px] text-muted">
-            Nothing here yet. <a href="/audit" className="underline hover:text-text">Run an audit</a>{" "}
+            Nothing here yet.{" "}
+            <Link href="/audit" className="underline hover:text-text">
+              Run an audit
+            </Link>{" "}
             and it will be on this list before the page finishes streaming.
           </p>
         ) : (
           <ul className="mt-8 border border-line bg-surface">
+            {/* Client-side navigation, but no prefetching: every row points at a
+                force-dynamic page that parses a transcript and regrades it, and a
+                board of thirty rows would otherwise render thirty of them on the
+                server the moment the list came into view. */}
             {runs.map((r) => (
               <li key={r.runId} className="border-b border-line last:border-b-0">
-                <a
+                <Link
                   href={`/runs/${r.runId}`}
+                  prefetch={false}
                   className="flex items-stretch gap-0 hover:bg-line/20"
                 >
                   <div className="flex w-16 shrink-0 items-center justify-center border-r border-line">
@@ -103,7 +112,7 @@ export default async function RunsPage() {
                   <div className="hidden shrink-0 items-center px-4 text-[11px] text-dim sm:flex">
                     {when(r.at)}
                   </div>
-                </a>
+                </Link>
               </li>
             ))}
           </ul>

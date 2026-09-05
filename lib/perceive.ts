@@ -994,7 +994,43 @@ export function fingerprint(p: Perception): string {
  * compared by how much they share rather than only by whether they match.
  */
 export function marks(p: Perception): string[] {
-  return p.elements.map((e) => `${e.role}:${e.name}:${e.value ?? ""}:${e.disabled ? "off" : "on"}`);
+  let m = MARKS.get(p);
+  if (!m) {
+    m = p.elements.map(
+      (e) => `${e.role}:${e.name}:${e.value ?? ""}:${e.disabled ? "off" : "on"}`,
+    );
+    MARKS.set(p, m);
+  }
+  return m;
+}
+
+/**
+ * The marks of one page, derived once and kept against the page itself.
+ *
+ * A perception is written once and then only read: the run pushes it onto the
+ * transcript and onto the agent's memory of where it has been, and nothing ever
+ * edits one afterwards. So the marks of a page are a property of that page and can
+ * be worked out on the first ask and remembered.
+ *
+ * Worth remembering because of who asks. `visited()` searches the pages a run has
+ * already stood on by resemblance rather than by key, so it walks the whole list and
+ * derives both sides of every comparison from scratch. It runs twice a step, once to
+ * build the prompt and once to record the move that was made, which is at most
+ * ninety comparisons over a ten step run, of up to sixty elements each, all of it
+ * the same arithmetic on the same objects. A WeakMap rather than a Map so a finished
+ * run's pages are collectable the moment the run lets go of them.
+ */
+const MARKS = new WeakMap<Perception, string[]>();
+const MARK_SET = new WeakMap<Perception, Set<string>>();
+
+/** The same marks as a set, since both callers want membership rather than order. */
+function markSet(p: Perception): Set<string> {
+  let s = MARK_SET.get(p);
+  if (!s) {
+    s = new Set(marks(p));
+    MARK_SET.set(p, s);
+  }
+  return s;
 }
 
 /**
@@ -1025,12 +1061,12 @@ export function marks(p: Perception): string[] {
  */
 export function resembles(a: Perception, b: Perception, threshold = 0.85): boolean {
   if (a.url !== b.url) return false;
-  const A = Array.from(new Set(marks(a)));
-  const B = new Set(marks(b));
-  if (!A.length && !B.size) return a.title === b.title;
+  const A = markSet(a);
+  const B = markSet(b);
+  if (!A.size && !B.size) return a.title === b.title;
   let shared = 0;
   for (const m of A) if (B.has(m)) shared++;
-  return shared / (A.length + B.size - shared) >= threshold;
+  return shared / (A.size + B.size - shared) >= threshold;
 }
 
 /**

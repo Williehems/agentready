@@ -1,10 +1,22 @@
+import { cache } from "react";
 import { notFound } from "next/navigation";
+import Link from "next/link";
 import { GradeCard } from "@/components/GradeCard";
 import { ShellHeader } from "@/components/ShellHeader";
-import { readRun, runTime } from "@/lib/store";
+import { readRun as readRunFromDisk, runTime } from "@/lib/store";
 
 /** The disk is the source: a run finished a second ago must render on the first ask. */
 export const dynamic = "force-dynamic";
+
+/**
+ * One read per request, shared by the title and the page.
+ *
+ * Both need the same run, and a run is a file to parse and a verdict to recompute
+ * from it: on a ten-step audit that is a couple of hundred kilobytes of JSON and a
+ * full regrade, and it was happening twice for every view of this page. Request
+ * scoped rather than cached, so `force-dynamic` above still means what it says.
+ */
+const readRun = cache(readRunFromDisk);
 
 const ACTION_LABEL: Record<string, string> = {
   signup: "sign up",
@@ -251,9 +263,9 @@ export default async function RunPage({ params }: { params: { id: string } }) {
         ) : null}
 
         <p className="mt-8 text-[12px]">
-          <a href="/audit" className="text-muted underline hover:text-text">
+          <Link href="/audit" className="text-muted underline hover:text-text">
             Run one of your own
-          </a>
+          </Link>
         </p>
       </div>
     </main>

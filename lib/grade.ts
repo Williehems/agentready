@@ -181,12 +181,40 @@ const VERIFY_SIGNS = [
  * copy, and reading both costs nothing.
  */
 function pageTextRaw(p: Perception): string {
-  return [p.title, p.text, ...p.elements.map((e) => e.name)].join("\n");
+  let s = RAW.get(p);
+  if (s === undefined) {
+    s = [p.title, p.text, ...p.elements.map((e) => e.name)].join("\n");
+    RAW.set(p, s);
+  }
+  return s;
 }
 
 function pageText(p: Perception): string {
-  return pageTextRaw(p).toLowerCase();
+  let s = LOWER.get(p);
+  if (s === undefined) {
+    s = pageTextRaw(p).toLowerCase();
+    LOWER.set(p, s);
+  }
+  return s;
 }
+
+/**
+ * One page's words, assembled once and kept against the page.
+ *
+ * Grading walks the same perceptions from several directions: the end state reads
+ * the last page and then every page, the code check reads every page again in the
+ * original casing, and the blocker pass reads every page a third time. Each of
+ * those was rebuilding and re-lowercasing the same two and a half thousand
+ * characters per page.
+ *
+ * It matters most where nobody is watching a browser. The runs list grades every
+ * stored run on every request, because the letter is a reading of the transcript
+ * rather than something read back from it, so this is forty-odd runs of that work
+ * on a page that is meant to render immediately. Weak keys, so a run read off disk
+ * and rendered is collectable straight afterwards.
+ */
+const RAW = new WeakMap<Perception, string>();
+const LOWER = new WeakMap<Perception, string>();
 
 /**
  * The line a sign sits on, in the casing the page used, so a verdict can quote
