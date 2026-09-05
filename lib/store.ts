@@ -1,4 +1,4 @@
-import { readdir, readFile } from "node:fs/promises";
+import { mkdir, readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { grade, type Transcript } from "@/lib/grade";
 import type { ActionKind, StepRecord, Verdict } from "@/lib/types";
@@ -65,6 +65,28 @@ const EXAMPLES = () => path.join(process.cwd(), "examples");
  * directory a re-run is allowed to overwrite.
  */
 const SHIPPED = () => path.join(process.cwd(), "public", "examples");
+
+/**
+ * Whether a run finished here would still be here afterwards.
+ *
+ * Both writes in `lib/agent.ts` swallow their errors on purpose, because a run that
+ * read a site correctly should not be discarded over a failed screenshot. The price
+ * of that decision is that a read-only filesystem loses runs in silence, and on a
+ * serverless host every filesystem outside `/tmp` is read-only. So a live audit on
+ * the deployed instance streams to the screen, grades correctly, and is gone.
+ *
+ * Asked by making the directory a run would write into, which is the same call the
+ * run itself makes, rather than by testing for a host name. The property that
+ * matters is whether this disk accepts writes, not who is hosting it.
+ */
+export async function keepsRuns(): Promise<boolean> {
+  try {
+    await mkdir(RUNTIME(), { recursive: true });
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 /** When the run happened, out of its own id: base36 milliseconds, then randomness. */
 export function runTime(runId: string): number | undefined {

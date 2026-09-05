@@ -1,12 +1,16 @@
 import Link from "next/link";
 import { ShellHeader } from "@/components/ShellHeader";
-import { listRuns, type RunSummary } from "@/lib/store";
+import { keepsRuns, listRuns, type RunSummary } from "@/lib/store";
 
 export const metadata = {
   title: "AgentReady: runs on the board",
 };
 
-/** Read the disk on every request: a run finished a second ago belongs on this list. */
+/**
+ * Read the disk on every request: where a run can be kept, one that finished a
+ * second ago belongs on this list. Where it cannot, the page says so, because a
+ * board that silently never grows is worse than one that admits why.
+ */
 export const dynamic = "force-dynamic";
 
 const GRADE_CLASS: Record<string, string> = {
@@ -45,7 +49,8 @@ function tally(runs: RunSummary[]) {
 }
 
 export default async function RunsPage() {
-  const runs = await listRuns();
+  // Two independent reads of the same disk, so they go out together.
+  const [runs, kept] = await Promise.all([listRuns(), keepsRuns()]);
   const { real, letters, withheld } = tally(runs);
 
   return (
@@ -59,6 +64,15 @@ export default async function RunsPage() {
           site earned; {withheld} do not, because we stopped the run or the page never loaded, and a
           grade about our own budget is not a finding about anyone&apos;s website.
         </p>
+
+        {!kept ? (
+          <p className="mt-3 max-w-2xl border-l-2 border-line pl-3 text-[13px] leading-relaxed text-dim">
+            This instance cannot keep a run. Its filesystem is read-only, so an audit you start
+            here streams to your screen, grades correctly, and is gone the moment it ends: it will
+            not appear below and its link would be a 404. The runs listed ship with the repository.
+            Clone it and yours stay.
+          </p>
+        ) : null}
 
         {real.length > 0 ? (
           <div className="mt-4 flex flex-wrap gap-x-5 gap-y-1 text-[12px] text-dim">
@@ -75,8 +89,10 @@ export default async function RunsPage() {
             Nothing here yet.{" "}
             <Link href="/audit" className="underline hover:text-text">
               Run an audit
-            </Link>{" "}
-            and it will be on this list before the page finishes streaming.
+            </Link>
+            {kept
+              ? " and it will be on this list before the page finishes streaming."
+              : ". It will not land here, because this instance cannot write to its own disk."}
           </p>
         ) : (
           <ul className="mt-8 border border-line bg-surface">

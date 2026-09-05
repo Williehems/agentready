@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import path from "node:path";
 import { describe, it } from "node:test";
-import { listRuns, readRun, runTime } from "../lib/store";
+import { keepsRuns, listRuns, readRun, runTime } from "../lib/store";
 
 /**
  * These read the repository itself, which is the point.
@@ -93,5 +95,35 @@ describe("listRuns", () => {
     for (const r of await listRuns()) {
       if (r.withheld) assert.ok(["cut short", "no verdict"].includes(r.withheld));
     }
+  });
+});
+
+describe("keepsRuns", () => {
+  it("says yes on a disk that takes writes", async () => {
+    // The ordinary case, and the one the board's promise depends on: a laptop.
+    assert.equal(await keepsRuns(), true);
+  });
+
+  it("says no when the runs directory cannot be made", async () => {
+    // A read-only serverless filesystem, stood in for by a root that is a file.
+    // mkdir cannot make a directory underneath package.json on any platform, and
+    // which errno it picks does not matter: the question is only whether the write
+    // a run is about to attempt would land.
+    const real = process.cwd;
+    process.cwd = () => path.join(real(), "package.json");
+    try {
+      assert.equal(await keepsRuns(), false);
+    } finally {
+      process.cwd = real;
+    }
+  });
+
+  it("leaves the answer to the disk rather than to an env var", async () => {
+    // Deliberately not `process.env.VERCEL`. A run is lost because a filesystem
+    // refused it, so if this ever starts reading a host name it will be right on
+    // Vercel and wrong everywhere else that mounts its code read-only.
+    const src = await readFile(new URL("../lib/store.ts", import.meta.url), "utf8");
+    const body = src.slice(src.indexOf("export async function keepsRuns"));
+    assert.ok(!/process\.env/.test(body.slice(0, body.indexOf("\n}"))));
   });
 });

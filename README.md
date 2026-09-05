@@ -213,6 +213,13 @@ anywhere in machine readable text.
   itself code until character 230.
 - No account is ever actually created on a third party's site. Live verification
   uses `integrate` against documentation, which is read only.
+- A run on the hosted instance is not kept. `public/runs/` sits inside the
+  deployment bundle and a serverless filesystem is read only outside `/tmp`, so
+  both writes in `lib/agent.ts` fail, and they are swallowed on purpose: a run that
+  read a site correctly should not be discarded over a failed screenshot. The audit
+  streams, grades, and is gone, and its permalink is a 404. `lib/store.ts` asks the
+  disk directly rather than checking for a host name, and the board says so out
+  loud when the answer is no. On a laptop the runs land and stay.
 - A run is a sample. `docs.stripe.com/api/authentication` has been audited seven
   times: both runs that were allowed to finish came back A 100, and the other five
   were aborted by our side and are reported as having no letter. That consistency
