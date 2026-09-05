@@ -136,15 +136,17 @@ Two things are deliberately not covered. A successful run, because it opens a
 metered browser on the first line and a test that costs money every time is a test
 nobody runs. And the components, which have no tests at all yet.
 
-Without keys the board and the three shipped example runs still render, and
+Without keys the board and the four shipped example runs still render, and
 `/audit` returns a plain sentence saying which key is missing rather than
 crashing.
 
 ## What it costs to run
 
-Measured across the 36 graded runs on disk: 185 Groq calls, 362,337 prompt tokens,
-19,299 completion tokens, so about **1,959 prompt tokens per step**. Groq's free
-tier allows 200,000 tokens a day, which is roughly seven full ten step runs.
+Measured across the 40 graded runs on disk: 193 Groq calls, 379,928 prompt tokens,
+19,961 completion tokens, so about **1,969 prompt tokens per step**. Calls and steps
+are one to one, and every ten step run on disk made exactly ten calls. The fifteen
+runs of eight steps or more cost a mean of 18,678 prompt tokens each, from 10,644 to
+27,535, so Groq's free tier of 200,000 tokens a day is about ten runs at full length.
 A measured two step run took 25 seconds end to end including the browser launch,
 so a ten step run is a couple of minutes plus any rate limit hold. The agent says
 out loud when it is being held by our own free tier, because a throttled agent and
@@ -175,13 +177,18 @@ a bare 429:
 
 ## What has been measured
 
-36 graded runs across 11 hosts, 205 page perceptions. 25 of them ran to their own
-end, and those are the only letters a site owns: 4 A, 10 C, 10 D, 1 F. The other
-11 were stopped by our side or never reached the site at all, and the board marks
+40 graded runs across 12 hosts, 213 page perceptions. 26 of them ran to their own
+end, and those are the only letters a site owns: 4 A, 10 C, 11 D, 1 F. The other
+14 were stopped by our side or never reached the site at all, and the board marks
 those `cut short` or `no verdict` instead of handing out a letter. An F earned
 because a browser provider answered 503 is a libel, not a finding.
 
-By action: 22 integrate, 11 signup, 2 contact, 1 book.
+By action: 22 integrate, 11 signup, 4 contact, 3 book.
+
+Every one of those numbers is counted by running the shipped grader over the stored
+transcripts, not by reading the letters saved beside them. The two disagree, which is
+the point: the same runs whose saved verdicts say `F` for one host are `no verdict`
+under the current grader, and the current grader is the one the board shows.
 
 Four runs ship in `examples/` so a fresh clone has something real to show, and the
 one failing example ships its eight screenshots too, under `public/examples/`. The
@@ -209,7 +216,11 @@ anywhere in machine readable text.
 - A run is a sample. `docs.stripe.com/api/authentication` has been audited seven
   times: both runs that were allowed to finish came back A 100, and the other five
   were aborted by our side and are reported as having no letter. That consistency
-  is reassuring and it is also two data points.
+  is reassuring and it is also two data points. The root `docs.stripe.com/` is the
+  honest counterexample. Nine runs, seven of them finished, and they came back A 100
+  once and C 60 six times. Same URL, same grader, 40 points apart, because what the
+  agent wandered into within ten steps decided whether a line of code ever entered
+  the evidence. A single letter about a large site is a sample of one path through it.
 
 ## Stack
 
