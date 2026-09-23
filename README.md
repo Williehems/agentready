@@ -125,7 +125,7 @@ Landing page at `/`, the audit console at `/audit`, the board at `/runs`.
 npm run typecheck && npm test
 ```
 
-404 tests, no network, no keys needed. They cover the grader, the perception
+412 tests, no network, no keys needed. They cover the grader, the perception
 reduction, the agent loop's decision handling, the Solari error mapping, the
 spending gate, and every refusal the three API routes can give: a body that is not
 JSON, a target that is not ours to touch, an instance with no keys, a stop that
@@ -173,7 +173,9 @@ a bare 429:
   starts refusing mid-run, and the letter it produces then is a fact about our
   billing rather than about the site, which is the one kind of wrong answer this
   product must never give. Raise it with `AUDIT_DAILY_CAP` once someone else is
-  paying for the tokens.
+  paying for the tokens. A value that is not a positive integer falls back to ten
+  rather than being believed, because `Number("abc")` is `NaN`, `started >= NaN` is
+  false, and a typo in that variable used to switch the limit off entirely.
 
 ## What has been measured
 

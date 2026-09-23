@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ACTION_LABELS } from "@/lib/action-labels";
 import type { ActionKind, RunEvent, Verdict } from "@/lib/types";
 import { AuditDock } from "./AuditDock";
@@ -39,6 +39,19 @@ export function AuditConsole() {
    */
   const runIdRef = useRef<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+
+  /**
+   * Leaving this page ends the run, because leaving is the same as closing the tab.
+   *
+   * The server documents three ways a run is released: the stop button, a tab that
+   * goes away, and a client that stops reading. Client-side navigation was none of
+   * them. The header links to / and /runs are on this page, so a visitor could click
+   * through mid-audit and the loop below would keep reading a stream nobody was
+   * watching, holding a billed cloud browser open for the rest of its ten steps with
+   * no way to stop it but a page refresh. Aborting fires the request's own signal,
+   * which is the second of the three the route already handles.
+   */
+  useEffect(() => () => abortRef.current?.abort(), []);
 
   const steps = useMemo(
     () => events.filter((e): e is StepEvent => e.type === "step"),

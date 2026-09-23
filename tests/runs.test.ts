@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it, beforeEach } from "node:test";
-import { beginRun, endRun, mayStart, chargeStart, budget, resetGate, stopRun, isRunning } from "../lib/runs";
+import { beginRun, endRun, mayStart, chargeStart, budget, resetGate, stopRun, isRunning, parseCap } from "../lib/runs";
 
 /**
  * The gate in front of a spending endpoint.
@@ -96,5 +96,52 @@ describe("stopRun: a stop has to reach the run", () => {
    */
   it("reports false for a run that has already finished", () => {
     assert.equal(stopRun("mtmyt58r-1ju1nx"), false);
+  });
+});
+
+/**
+ * Reading the cap is its own test, because the failure it guards is the worst one
+ * this gate can have: a limit that silently stops being a limit.
+ *
+ * `DAILY_CAP` is read once at module load, so the parse is a function taking the raw
+ * string rather than something a test can only reach by reloading the module with a
+ * different environment.
+ */
+describe("parseCap: the number the spending limit falls back on", () => {
+  it("takes a positive integer when one is given", () => {
+    assert.equal(parseCap("3"), 3);
+    assert.equal(parseCap("10"), 10);
+    assert.equal(parseCap("1"), 1);
+    assert.equal(parseCap("250"), 250);
+  });
+
+  it("falls back to ten on a value that is not a number", () => {
+    // `Number("abc")` is NaN and `started >= NaN` is always false, so before this
+    // parse existed a typo here removed the cap entirely while reporting cap: null.
+    assert.equal(parseCap("abc"), 10);
+    assert.equal(parseCap("ten"), 10);
+    assert.equal(parseCap("1e999"), 10);
+  });
+
+  it("falls back to ten on an empty or absent value", () => {
+    // `?? 10` never saw the empty string, and Number("") is 0, which refused every
+    // request with "has run its 0 audits for today".
+    assert.equal(parseCap(""), 10);
+    assert.equal(parseCap(undefined), 10);
+    assert.equal(parseCap("   "), 10);
+  });
+
+  it("refuses to let the cap be turned off from the environment", () => {
+    // Zero and negatives are the same mistake wearing a different hat: a limit of
+    // nothing either locks the instance out or, through the NaN path, lets it spend
+    // without end. Neither is a cap anyone meant to set.
+    assert.equal(parseCap("0"), 10);
+    assert.equal(parseCap("-1"), 10);
+    assert.equal(parseCap("-0"), 10);
+  });
+
+  it("refuses a fraction, which is not a number of runs", () => {
+    assert.equal(parseCap("2.5"), 10);
+    assert.equal(parseCap("Infinity"), 10);
   });
 });

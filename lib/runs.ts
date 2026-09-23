@@ -60,7 +60,28 @@ export function isRunning(runId: string): boolean {
  *
  * Raise it with AUDIT_DAILY_CAP once someone else is paying for the tokens.
  */
-const DAILY_CAP = Number(process.env.AUDIT_DAILY_CAP ?? 10);
+const DEFAULT_CAP = 10;
+
+/**
+ * What the operator asked for, or the default when they asked for nothing parseable.
+ *
+ * This is a spending limit on an endpoint that opens a metered browser, so the
+ * failure it must not have is a typo that removes it. `Number("abc")` is `NaN`, and
+ * `started >= NaN` is false for every value of `started`, which made an unparseable
+ * `AUDIT_DAILY_CAP` disable the cap entirely while `budget()` reported `cap: null`
+ * to the page. Measured: twelve runs went through where ten was the whole point.
+ *
+ * An empty string failed the other way and was worse to read: `Number("")` is 0, so
+ * every request was refused with "This instance has run its 0 audits for today".
+ * Both now land on the default, because a limit that cannot be read is a limit that
+ * was never set, and the safe reading of that is the documented one.
+ */
+export function parseCap(raw: string | undefined): number {
+  const n = Number(raw);
+  return Number.isInteger(n) && n >= 1 ? n : DEFAULT_CAP;
+}
+
+const DAILY_CAP = parseCap(process.env.AUDIT_DAILY_CAP);
 
 /** How long one visitor waits between runs, so a single tab cannot drain the day. */
 const COOLDOWN_MS = 60_000;
